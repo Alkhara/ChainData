@@ -1,5 +1,5 @@
 import requests
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Any
 from datetime import datetime
 import json
 from functools import lru_cache
@@ -10,7 +10,7 @@ class DefiLlamaAPI:
     def __init__(self):
         self.session = requests.Session()
     
-    def _make_request(self, endpoint: str, params: Optional[Dict] = None) -> Dict:
+    def _make_request(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Make a request to the DefiLlama API"""
         url = f"{self.BASE_URL}{endpoint}"
         try:
@@ -22,12 +22,12 @@ class DefiLlamaAPI:
             return {}
     
     @lru_cache(maxsize=128)
-    def get_all_protocols(self) -> List[Dict]:
+    def get_all_protocols(self) -> List[Dict[str, Any]]:
         """Get list of all protocols with their TVL"""
         return self._make_request("/protocols")
     
     @lru_cache(maxsize=128)
-    def get_protocol_tvl(self, protocol: str) -> Dict:
+    def get_protocol_tvl(self, protocol: str) -> Dict[str, Any]:
         """Get historical TVL of a protocol and breakdowns by token and chain"""
         return self._make_request(f"/protocol/{protocol}")
     
@@ -38,7 +38,7 @@ class DefiLlamaAPI:
         return float(response) if response else 0.0
     
     @lru_cache(maxsize=128)
-    def get_historical_chain_tvl(self, chain: Optional[str] = None) -> Dict:
+    def get_historical_chain_tvl(self, chain: Optional[str] = None) -> Dict[str, Any]:
         """Get historical TVL of DeFi on all chains or a specific chain"""
         endpoint = "/v2/historicalChainTvl"
         if chain:
@@ -46,11 +46,11 @@ class DefiLlamaAPI:
         return self._make_request(endpoint)
     
     @lru_cache(maxsize=128)
-    def get_all_chains_tvl(self) -> Dict:
+    def get_all_chains_tvl(self) -> Dict[str, Any]:
         """Get current TVL of all chains"""
         return self._make_request("/v2/chains")
     
-    def get_protocol_info(self, protocol: str) -> Dict:
+    def get_protocol_info(self, protocol: str) -> Dict[str, Any]:
         """Get comprehensive protocol information including TVL history"""
         tvl_history = self.get_protocol_tvl(protocol)
         current_tvl = self.get_current_tvl(protocol)
@@ -61,7 +61,7 @@ class DefiLlamaAPI:
             "tvl_history": tvl_history
         }
     
-    def search_protocols(self, query: str) -> List[Dict]:
+    def search_protocols(self, query: str) -> List[Dict[str, Any]]:
         """Search for protocols by name"""
         query = query.lower()
         all_protocols = self.get_all_protocols()
@@ -71,7 +71,7 @@ class DefiLlamaAPI:
                query in protocol.get("slug", "").lower()
         ]
     
-    def get_top_protocols(self, limit: int = 10) -> List[Dict]:
+    def get_top_protocols(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get top protocols by TVL"""
         all_protocols = self.get_all_protocols()
         return sorted(
@@ -80,7 +80,7 @@ class DefiLlamaAPI:
             reverse=True
         )[:limit]
     
-    def get_chain_protocols(self, chain: str) -> List[Dict]:
+    def get_chain_protocols(self, chain: str) -> List[Dict[str, Any]]:
         """Get all protocols on a specific chain"""
         all_protocols = self.get_all_protocols()
         return [

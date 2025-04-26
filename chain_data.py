@@ -13,6 +13,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from typing import Dict, List, Optional, Union, Any
 from defillama import DefiLlamaAPI
 
 # Initialize colorama
