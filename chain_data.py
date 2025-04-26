@@ -13,9 +13,13 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from defillama import DefiLlamaAPI
 
 # Initialize colorama
 init()
+
+# Initialize DefiLlama API
+defillama = DefiLlamaAPI()
 
 # print a cool welcome message in ascii art saying ChainData
 print(f"{Fore.CYAN}")
@@ -262,6 +266,37 @@ def cleanup_resources():
     if hasattr(get_chain_data_by_name, 'cache_clear'):
         get_chain_data_by_name.cache_clear()
 
+def get_protocol_tvl(protocol: str) -> Dict:
+    """Get TVL data for a protocol"""
+    return defillama.get_protocol_info(protocol)
+
+def get_chain_tvl(chain: str) -> Dict:
+    """Get TVL data for a chain"""
+    return defillama.get_historical_chain_tvl(chain)
+
+def search_protocols(query: str) -> List[Dict]:
+    """Search for DeFi protocols"""
+    return defillama.search_protocols(query)
+
+def get_top_protocols(limit: int = 10) -> List[Dict]:
+    """Get top protocols by TVL"""
+    return defillama.get_top_protocols(limit)
+
+def get_chain_protocols(chain: str) -> List[Dict]:
+    """Get all protocols on a specific chain"""
+    return defillama.get_chain_protocols(chain)
+
+def print_protocol_info(protocol_data: Dict):
+    """Print formatted protocol information"""
+    print(f"\n{Fore.CYAN}Protocol: {protocol_data['name']}{Style.RESET_ALL}")
+    print(f"Current TVL: ${protocol_data['current_tvl']:,.2f}")
+    
+    if 'tvl_history' in protocol_data:
+        print(f"\n{Fore.CYAN}TVL History:{Style.RESET_ALL}")
+        for entry in protocol_data['tvl_history'][-5:]:  # Show last 5 entries
+            date = datetime.fromtimestamp(entry['date']).strftime('%Y-%m-%d')
+            print(f"{date}: ${entry['totalLiquidityUSD']:,.2f}")
+
 def main():
     try:
         parser = argparse.ArgumentParser(description='ChainData - Get blockchain information')
@@ -273,10 +308,16 @@ def main():
         identifier_group.add_argument('-s', '--search', type=str, help='Search for chains')
         identifier_group.add_argument('-l', '--list', action='store_true', help='List all available chains')
         
+        # Add DefiLlama specific arguments
+        parser.add_argument('--protocol', type=str, help='Protocol name for TVL data')
+        parser.add_argument('--top-protocols', type=int, help='Get top N protocols by TVL')
+        parser.add_argument('--chain-protocols', type=str, help='Get all protocols on a specific chain')
+        
         # Add function argument
         parser.add_argument('-f', '--function', type=str, required=False, choices=[
             'http-rpcs', 'wss-rpcs', 'explorer', 'eips', 
-            'native-currency', 'tvl', 'chain-data', 'explorer-link'
+            'native-currency', 'tvl', 'chain-data', 'explorer-link',
+            'protocol-tvl', 'chain-tvl', 'search-protocols'
         ], help='Function to execute')
         
         # Add format argument
@@ -350,6 +391,22 @@ def main():
             result = get_chain_data(identifier)
         elif args.function == 'explorer-link':
             result = get_explorer_link(identifier, args.address)
+        elif args.function == 'protocol-tvl':
+            result = get_protocol_tvl(args.protocol)
+            print_protocol_info(result)
+            return
+        elif args.function == 'chain-tvl':
+            result = get_chain_tvl(args.chain_protocols)
+            print(f"\n{Fore.CYAN}TVL for {args.chain_protocols}:{Style.RESET_ALL}")
+            for chain, tvl in result.items():
+                print(f"{chain}: ${tvl:,.2f}")
+            return
+        elif args.function == 'search-protocols':
+            result = search_protocols(args.search)
+            print(f"\n{Fore.CYAN}Search Results:{Style.RESET_ALL}")
+            for protocol in result:
+                print(f"{protocol['name']}: ${protocol.get('tvl', 0):,.2f}")
+            return
         
         # Print result
         if isinstance(identifier, int):
