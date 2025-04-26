@@ -2,6 +2,11 @@ import requests
 from typing import Dict, List, Optional, Union, Any
 from datetime import datetime
 from functools import lru_cache
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+import json
+import hashlib
+import os
 from ..core.cache import defillama_cache
 from ..core.config import config
 
@@ -26,9 +31,19 @@ class DefiLlamaAPI:
         session.mount("https://", adapter)
         return session
 
+    def _sanitize_cache_key(self, url: str, params: Optional[Dict] = None) -> str:
+        """Create a safe cache key from URL and parameters"""
+        # Combine URL and params into a string
+        key = url
+        if params:
+            key += "?" + "&".join(f"{k}={v}" for k, v in sorted(params.items()))
+        
+        # Create a hash of the key to use as the filename
+        return hashlib.md5(key.encode()).hexdigest()
+
     def _make_request(self, url: str, params: Optional[Dict] = None) -> Dict:
         """Make a request to the API with caching"""
-        cache_key = f"{url}?{str(params)}"
+        cache_key = self._sanitize_cache_key(url, params)
         cached_data = defillama_cache.load_from_cache(cache_key)
         if cached_data:
             return cached_data
@@ -128,7 +143,11 @@ class DefiLlamaAPI:
     def get_pools(self) -> List[Dict]:
         """Get latest data for all pools"""
         url = f"{self.yields_url}/pools"
-        return self._make_request(url)
+        response = self._make_request(url)
+        # The API returns a dictionary with pools under the 'data' key
+        if isinstance(response, dict) and 'data' in response:
+            return response['data']
+        return response
 
     def get_pool_chart(self, pool_id: str) -> Dict:
         """Get historical APY and TVL of a pool"""
@@ -211,6 +230,76 @@ class DefiLlamaAPI:
         """Get summary of fees for a specific protocol"""
         url = f"{self.base_url}/summary/fees/{protocol}"
         return self._make_request(url, {"dataType": data_type})
+
+    # TVL API
+    def get_all_protocols(self) -> List[Dict]:
+        """Get list of all protocols with their TVL"""
+        url = f"{self.base_url}/protocols"
+        return self._make_request(url)
+
+    def get_protocol_tvl(self, protocol: str) -> Dict:
+        """Get historical TVL of a protocol"""
+        url = f"{self.base_url}/protocol/{protocol}"
+        return self._make_request(url)
+
+    def get_current_tvl(self, protocol: str) -> float:
+        """Get current TVL of a protocol"""
+        url = f"{self.base_url}/tvl/{protocol}"
+        response = self._make_request(url)
+        return float(response) if response else 0.0
+
+    def get_historical_chain_tvl(self, chain: Optional[str] = None) -> Dict:
+        """Get historical TVL of DeFi on all chains or a specific chain"""
+        url = f"{self.base_url}/v2/historicalChainTvl"
+        if chain:
+            url = f"{url}/{chain}"
+        return self._make_request(url)
+
+    def get_all_chains_tvl(self) -> Dict:
+        """Get current TVL of all chains"""
+        url = f"{self.base_url}/v2/chains"
+        return self._make_request(url)
+
+    def get_protocol_info(self, protocol: str) -> Dict:
+        """Get comprehensive protocol information including TVL history"""
+        tvl_history = self.get_protocol_tvl(protocol)
+        current_tvl = self.get_current_tvl(protocol)
+        
+        return {
+            "name": protocol,
+            "current_tvl": current_tvl,
+            "tvl_history": tvl_history
+        }
+
+    def search_protocols(self, query: str) -> List[Dict]:
+        """Search for protocols by name"""
+        query = query.lower()
+        all_protocols = self.get_all_protocols()
+        return [
+            protocol for protocol in all_protocols
+            if query in protocol.get("name", "").lower() or
+               query in protocol.get("slug", "").lower()
+        ]
+
+    def get_top_protocols(self, limit: Optional[int] = None) -> List[Dict]:
+        """Get top protocols by TVL"""
+        all_protocols = self.get_all_protocols()
+        if limit is None:
+            limit = config.get('display.max_protocols')
+        # Sort by TVL, treating None as 0
+        return sorted(
+            all_protocols,
+            key=lambda x: x.get("tvl", 0) or 0,  # Convert None to 0
+            reverse=True
+        )[:limit]
+
+    def get_chain_protocols(self, chain: str) -> List[Dict]:
+        """Get all protocols on a specific chain"""
+        all_protocols = self.get_all_protocols()
+        return [
+            protocol for protocol in all_protocols
+            if chain.lower() in [c.lower() for c in protocol.get("chains", [])]
+        ]
 
 # Create a global instance
 defillama_api = DefiLlamaAPI() 

@@ -9,6 +9,18 @@
     "display": {
         "max_protocols": 20,
         "max_history_entries": 10,
-        "date_format": "%Y-%m-%d %H:%M"
+        "date_format": "%Y-%m-%d %H:%M",
+        "max_chains": 20,
+        "max_pools": 20,
+        "max_stablecoins": 20,
+        "max_dexes": 20,
+        "max_options": 20,
+        "max_fees": 20,
+        "max_prices": 20,
+        "max_search_results": 20,
+        "max_tvl_history": 20,
+        "max_volume_history": 20,
+        "max_fee_history": 20,
+        "max_price_history": 20
     }
 }

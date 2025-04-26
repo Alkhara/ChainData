@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from typing import Dict, List, Optional, Union, Any
-from defillama import DefiLlamaAPI
+from src.api.defillama import DefiLlamaAPI
 from config import config
 
 # Initialize colorama
@@ -272,20 +272,31 @@ def get_protocol_tvl(protocol: str) -> Dict:
     """Get TVL data for a protocol"""
     return defillama.get_protocol_info(protocol)
 
-def get_chain_tvl(chain: str) -> Dict:
-    """Get TVL data for a chain"""
-    return defillama.get_historical_chain_tvl(chain)
+def get_chain_tvl(chain: str, limit: Optional[int] = None) -> Dict:
+    """Get chain TVL"""
+    if limit is None:
+        limit = config.get('display.max_tvl_history')
+    result = defillama.get_chain_tvl(chain)
+    if limit and isinstance(result, dict):
+        return {k: v[:limit] if isinstance(v, list) else v for k, v in result.items()}
+    return result
 
 def search_protocols(query: str) -> List[Dict]:
     """Search for DeFi protocols"""
-    return defillama.search_protocols(query)
+    results = defillama.search_protocols(query)
+    max_results = config.get('display.max_search_results')
+    return results[:max_results] if max_results else results
 
 def get_top_protocols(limit: Optional[int] = None) -> List[Dict]:
     """Get top protocols by TVL"""
+    if limit is None:
+        limit = config.get('display.max_protocols')
     return defillama.get_top_protocols(limit)
 
 def get_chain_protocols(chain: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
     """Get all protocols on a specific chain, optionally limited to top N by TVL"""
+    if limit is None:
+        limit = config.get('display.max_protocols')
     protocols = defillama.get_chain_protocols(chain)
     if limit:
         # Sort by TVL and take top N
@@ -317,6 +328,152 @@ def print_protocol_info(protocol_data: Dict[str, Any]):
     else:
         print_warning("No TVL history data available")
 
+def get_pools(limit: Optional[int] = None, min_tvl: Optional[float] = None, min_apy: Optional[float] = None) -> List[Dict]:
+    """Get yield pools with optional filtering"""
+    if limit is None:
+        limit = config.get('display.max_pools')
+    pools = defillama.get_pools()
+    if isinstance(pools, list):
+        # Apply filters
+        if min_tvl is not None:
+            pools = [p for p in pools if p.get('tvlUsd', 0) >= min_tvl]
+        if min_apy is not None:
+            pools = [p for p in pools if p.get('apy', 0) >= min_apy]
+        
+        # Sort by APY in descending order
+        pools = sorted(pools, key=lambda x: x.get('apy', 0) or 0, reverse=True)
+        
+        # Format the results as a table
+        if pools:
+            print("\nYield Pools:")
+            print("-" * 100)
+            # Left-align text columns, right-align numeric columns
+            headers = [
+                f"{'Project':<25}",
+                f"{'Chain':<12}",
+                f"{'Symbol':<20}",
+                f"{'APY':>15}",
+                f"{'TVL (USD)':>15}"
+            ]
+            print("".join(headers))
+            print("-" * 100)
+            
+            for pool in pools[:limit]:
+                project = pool.get('project', 'N/A')[:24]  # Truncate long names
+                chain = pool.get('chain', 'N/A')[:11]
+                symbol = pool.get('symbol', 'N/A')[:19]
+                apy = f"{pool.get('apy', 0):,.2f}%"
+                tvl = f"${pool.get('tvlUsd', 0):,.2f}"
+                
+                # Format each column with proper alignment
+                columns = [
+                    f"{project:<25}",
+                    f"{chain:<12}",
+                    f"{symbol:<20}",
+                    f"{apy:>15}",
+                    f"{tvl:>15}"
+                ]
+                print("".join(columns))
+            
+            print("-" * 100)
+            print(f"Showing {min(len(pools), limit)} of {len(pools)} pools")
+            if min_tvl is not None:
+                print(f"Minimum TVL: ${min_tvl:,.2f}")
+            if min_apy is not None:
+                print(f"Minimum APY: {min_apy:.2f}%")
+        
+        return pools[:limit]
+    return pools
+
+def get_stablecoins(limit: Optional[int] = None) -> List[Dict]:
+    """Get stablecoins"""
+    if limit is None:
+        limit = config.get('display.max_stablecoins')
+    stablecoins = defillama.get_stablecoins()
+    if isinstance(stablecoins, list):
+        return stablecoins[:limit]
+    elif isinstance(stablecoins, dict):
+        return list(stablecoins.values())[:limit]
+    return stablecoins
+
+def get_dex_overview(limit: Optional[int] = None) -> List[Dict]:
+    """Get DEX overview"""
+    if limit is None:
+        limit = config.get('display.max_dexes')
+    dexs = defillama.get_dex_overview()
+    if isinstance(dexs, list):
+        return dexs[:limit]
+    elif isinstance(dexs, dict):
+        return list(dexs.values())[:limit]
+    return dexs
+
+def get_options_overview(limit: Optional[int] = None) -> List[Dict]:
+    """Get options overview"""
+    if limit is None:
+        limit = config.get('display.max_options')
+    options = defillama.get_options_overview()
+    if isinstance(options, list):
+        return options[:limit]
+    elif isinstance(options, dict):
+        return list(options.values())[:limit]
+    return options
+
+def get_fees_overview(limit: Optional[int] = None) -> List[Dict]:
+    """Get fees overview"""
+    if limit is None:
+        limit = config.get('display.max_fees')
+    fees = defillama.get_fees_overview()
+    if isinstance(fees, list):
+        return fees[:limit]
+    elif isinstance(fees, dict):
+        return list(fees.values())[:limit]
+    return fees
+
+def get_current_prices(coins: List[str], limit: Optional[int] = None) -> Dict:
+    """Get current prices"""
+    if limit is None:
+        limit = config.get('display.max_prices')
+    result = defillama.get_current_prices(coins)
+    if limit and isinstance(result, dict):
+        return dict(list(result.items())[:limit])
+    return result
+
+def get_historical_prices(coins: List[str], timestamp: int, limit: Optional[int] = None) -> Dict:
+    """Get historical prices"""
+    if limit is None:
+        limit = config.get('display.max_price_history')
+    result = defillama.get_historical_prices(coins, timestamp)
+    if limit and isinstance(result, dict):
+        return dict(list(result.items())[:limit])
+    return result
+
+def get_price_chart(coins: List[str], period: str, limit: Optional[int] = None) -> Dict:
+    """Get price chart"""
+    if limit is None:
+        limit = config.get('display.max_price_history')
+    result = defillama.get_price_chart(coins, period)
+    if limit and isinstance(result, dict):
+        return {k: v[:limit] if isinstance(v, list) else v for k, v in result.items()}
+    return result
+
+def get_volume_history(protocol: str, limit: Optional[int] = None) -> Dict:
+    """Get volume history"""
+    if limit is None:
+        limit = config.get('display.max_volume_history')
+    result = defillama.get_volume_history(protocol)
+    if limit and isinstance(result, dict):
+        return {k: v[:limit] if isinstance(v, list) else v for k, v in result.items()}
+    return result
+
+def get_fee_history(protocol: str, limit: Optional[int] = None) -> Dict:
+    """Get fee history"""
+    if limit is None:
+        limit = config.get('display.max_fee_history')
+    result = defillama.get_fee_history(protocol)
+    if limit and isinstance(result, dict):
+        return {k: v[:limit] if isinstance(v, list) else v for k, v in result.items()}
+    return result
+
 def main():
     try:
         parser = argparse.ArgumentParser(description='ChainData - Get blockchain information')
@@ -332,13 +489,45 @@ def main():
         parser.add_argument('--protocol', type=str, help='Protocol name for TVL data')
         parser.add_argument('--top-protocols', type=int, help='Get top N protocols by TVL')
         parser.add_argument('--chain-protocols', type=str, help='Get all protocols on a specific chain')
-        parser.add_argument('--limit', type=int, help='Limit the number of protocols shown (for chain-protocols)')
+        parser.add_argument('--limit', type=int, help='Limit the number of protocols shown')
+        parser.add_argument('--target-chain', type=str, help='Target chain for chain-specific operations')
+        parser.add_argument('--pool-id', type=str, help='Pool ID for yield/APY data')
+        parser.add_argument('--coins', type=str, help='Comma-separated list of coins for price data')
+        parser.add_argument('--timestamp', type=int, help='Timestamp for historical data')
+        parser.add_argument('--period', type=str, help='Time period for charts (e.g., 24h, 7d)')
+        parser.add_argument('--data-type', type=str, choices=['dailyFees', 'dailyRevenue', 'dailyNotionalVolume', 'dailyPremiumVolume'],
+                          help='Data type for fees/volumes')
+        
+        # Add filter arguments for get-pools
+        parser.add_argument('--min-tvl', type=str, help='Minimum TVL in USD for yield pools')
+        parser.add_argument('--min-apy', type=str, help='Minimum APY percentage for yield pools')
         
         # Add function argument
         parser.add_argument('-f', '--function', type=str, required=False, choices=[
+            # Chain functions
             'http-rpcs', 'wss-rpcs', 'explorer', 'eips', 
             'native-currency', 'tvl', 'chain-data', 'explorer-link',
-            'protocol-tvl', 'chain-tvl', 'search-protocols'
+            
+            # TVL functions
+            'protocol-tvl', 'chain-tvl', 'search-protocols',
+            
+            # Stablecoin functions
+            'get-stablecoins', 'get-stablecoin-charts', 'get-chain-stablecoin-charts',
+            'get-stablecoin-data', 'get-stablecoin-chains', 'get-stablecoin-prices',
+            
+            # Yield/APY functions
+            'get-pools', 'get-pool-chart',
+            
+            # DEX functions
+            'get-dex-overview', 'get-chain-dex-overview', 'get-dex-summary',
+            'get-options-overview', 'get-chain-options-overview', 'get-options-summary',
+            
+            # Fee/Revenue functions
+            'get-fees-overview', 'get-chain-fees-overview', 'get-fees-summary',
+            
+            # Price functions
+            'get-current-prices', 'get-historical-prices', 'get-batch-historical-prices',
+            'get-price-chart', 'get-price-percentage', 'get-first-price'
         ], help='Function to execute')
         
         # Add format argument
@@ -367,7 +556,7 @@ def main():
             if results:
                 print(f"\n{Fore.CYAN}Search Results:{Style.RESET_ALL}")
                 for protocol in results:
-                    tvl = protocol.get('tvl', 0) or 0  # Handle None values
+                    tvl = protocol.get('tvl', 0) or 0
                     print(f"{protocol['name']}: ${tvl:,.2f}")
             else:
                 print_warning(f"No protocols found matching '{args.search}'")
@@ -392,23 +581,104 @@ def main():
             for i, protocol in enumerate(chain_protocols, 1):
                 print(f"{i}. {protocol['name']}: ${protocol.get('tvl', 0):,.2f}")
             return
-        
-        if args.list:
-            list_chains(format=args.format)
+
+        # Handle yield/APY functions
+        if args.function == 'get-pools':
+            # Parse filter arguments
+            min_tvl = None
+            min_apy = None
+            if args.min_tvl:
+                try:
+                    min_tvl = float(args.min_tvl)
+                except ValueError:
+                    print_error("Error: --min-tvl must be a number")
+                    return
+            if args.min_apy:
+                try:
+                    min_apy = float(args.min_apy)
+                except ValueError:
+                    print_error("Error: --min-apy must be a number")
+                    return
+            
+            result = get_pools(limit=args.limit, min_tvl=min_tvl, min_apy=min_apy)
+            if args.format == 'json':
+                print(json.dumps(result, indent=2))
             return
-        
-        if args.search:
-            results = search_chains(args.search)
-            if results:
-                print(f"\n{Fore.CYAN}Search Results:{Style.RESET_ALL}")
-                print(f"{Fore.CYAN}{'ID':<8} {'Name':<30} {'Short Name':<15}{Style.RESET_ALL}")
-                print("-" * 55)
-                for chain in results:
-                    print(f"{chain['chainId']:<8} {chain['name']:<30} {chain.get('shortName', 'N/A'):<15}")
-            else:
-                print_warning(f"No chains found matching '{args.search}'")
+
+        if args.function == 'get-pool-chart':
+            if not args.pool_id:
+                print_error("Error: --pool-id is required for pool chart")
+                return
+            result = defillama.get_pool_chart(args.pool_id)
+            print(json.dumps(result, indent=2))
             return
-        
+
+        # Handle stablecoin functions
+        if args.function == 'get-stablecoins':
+            result = get_stablecoins()
+            print(json.dumps(result, indent=2))
+            return
+
+        if args.function == 'get-stablecoin-charts':
+            result = defillama.get_stablecoin_charts()
+            print(json.dumps(result, indent=2))
+            return
+
+        if args.function == 'get-chain-stablecoin-charts':
+            if not args.target_chain:
+                print_error("Error: --target-chain is required for chain-specific stablecoin charts")
+                return
+            result = defillama.get_chain_stablecoin_charts(args.target_chain)
+            print(json.dumps(result, indent=2))
+            return
+
+        # Handle price functions
+        if args.function == 'get-current-prices':
+            if not args.coins:
+                print_error("Error: --coins is required for current prices")
+                return
+            coins = args.coins.split(',')
+            result = get_current_prices(coins)
+            print(json.dumps(result, indent=2))
+            return
+
+        if args.function == 'get-historical-prices':
+            if not args.coins or not args.timestamp:
+                print_error("Error: --coins and --timestamp are required for historical prices")
+                return
+            coins = args.coins.split(',')
+            result = get_historical_prices(coins, args.timestamp)
+            print(json.dumps(result, indent=2))
+            return
+
+        # Handle DEX functions
+        if args.function == 'get-dex-overview':
+            result = get_dex_overview()
+            print(json.dumps(result, indent=2))
+            return
+
+        if args.function == 'get-chain-dex-overview':
+            if not args.target_chain:
+                print_error("Error: --target-chain is required for chain-specific DEX overview")
+                return
+            result = defillama.get_chain_dex_overview(args.target_chain)
+            print(json.dumps(result, indent=2))
+            return
+
+        # Handle fee/revenue functions
+        if args.function == 'get-fees-overview':
+            result = get_fees_overview()
+            print(json.dumps(result, indent=2))
+            return
+
+        if args.function == 'get-chain-fees-overview':
+            if not args.target_chain:
+                print_error("Error: --target-chain is required for chain-specific fees overview")
+                return
+            result = defillama.get_chain_fees_overview(args.target_chain, data_type=args.data_type)
+            print(json.dumps(result, indent=2))
+            return
+
         # Handle chain-specific functions
         if not args.function:
             print_error("Error: --function is required for chain-specific operations. Use --list-functions to see available options.")
@@ -448,16 +718,6 @@ def main():
             result = get_chain_data(identifier)
         elif args.function == 'explorer-link':
             result = get_explorer_link(identifier, args.address)
-        elif args.function == 'protocol-tvl':
-            result = get_protocol_tvl(args.protocol)
-            print_protocol_info(result)
-            return
-        elif args.function == 'chain-tvl':
-            result = get_chain_tvl(args.chain_protocols)
-            print(f"\n{Fore.CYAN}TVL for {args.chain_protocols}:{Style.RESET_ALL}")
-            for chain, tvl in result.items():
-                print(f"{chain}: ${tvl:,.2f}")
-            return
         
         # Print result
         if isinstance(identifier, int):

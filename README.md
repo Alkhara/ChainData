@@ -2,6 +2,28 @@
 
 A comprehensive CLI tool for blockchain and DeFi data analysis.
 
+## Quick Start
+
+```bash
+# Install
+pip install -e .
+
+# List all available chains
+python chain_data.py --list
+
+# Search for a chain
+python chain_data.py --search "ethereum"
+
+# Get chain data by ID
+python chain_data.py --chain-id 1
+
+# Get protocol information
+python chain_data.py --protocol aave
+
+# Get top protocols by TVL
+python chain_data.py --top-protocols 10
+```
+
 ## Features
 
 ### Blockchain Data
@@ -62,119 +84,106 @@ cd chaindata
 pip install -e .
 ```
 
-## Usage
+## Usage Examples
 
-### Basic Chain Information
+### Chain Information
 
-List all available chains:
 ```bash
-python chain_data.py --list
-```
+# List all chains in a table format
+python chain_data.py --list --format table
 
-Search for a chain:
-```bash
-python chain_data.py --search "ethereum"
-```
+# Search for chains with "eth" in their name
+python chain_data.py --search "eth"
 
-Get chain data by ID:
-```bash
-python chain_data.py --chain-id 1
+# Get detailed chain information
+python chain_data.py --chain-id 1 --format json
+
+# Get RPC endpoints for a chain
+python chain_data.py --chain-id 1 --function http-rpcs
+python chain_data.py --chain-id 1 --function wss-rpcs
+
+# Get block explorers
+python chain_data.py --chain-id 1 --function explorer
+
+# Get EIP support
+python chain_data.py --chain-id 1 --function eips
 ```
 
 ### DeFi Data
 
-Get protocol information:
 ```bash
+# Get protocol information
 python chain_data.py --protocol aave
-```
 
-Get top protocols by TVL:
-```bash
+# Get top 10 protocols by TVL
 python chain_data.py --top-protocols 10
-```
 
-Get protocols on a specific chain:
-```bash
+# Get protocols on Ethereum
 python chain_data.py --chain-protocols ethereum --limit 5
+
+# Search for protocols
+python chain_data.py --function search-protocols --search "lending"
+
+# Get historical TVL data
+python chain_data.py --protocol aave --function tvl-history
 ```
 
-Search for protocols:
-```bash
-python chain_data.py --function search-protocols --search "aave"
-```
+### Token Data
 
-### Coins and Prices
-
-Get current prices:
 ```bash
+# Get current prices
 python chain_data.py --function get-current-prices --coins "ethereum:0x...","bsc:0x..."
-```
 
-Get historical prices:
-```bash
+# Get historical prices
 python chain_data.py --function get-historical-prices --coins "ethereum:0x..." --timestamp 1648680149
-```
 
-Get price charts:
-```bash
+# Get price charts
 python chain_data.py --function get-price-chart --coins "ethereum:0x..." --period "7d"
 ```
 
 ### Stablecoins
 
-List all stablecoins:
 ```bash
+# List all stablecoins
 python chain_data.py --function get-stablecoins
-```
 
-Get stablecoin market cap data:
-```bash
+# Get stablecoin market cap data
 python chain_data.py --function get-stablecoin-charts
-```
 
-Get chain-specific stablecoin data:
-```bash
+# Get chain-specific stablecoin data
 python chain_data.py --function get-chain-stablecoin-charts --chain ethereum
 ```
 
-### Yields
+### Yields and APY
 
-Get pool data:
 ```bash
+# Get pool data
 python chain_data.py --function get-pools
-```
 
-Get pool APY/TVL chart:
-```bash
+# Get pool APY/TVL chart
 python chain_data.py --function get-pool-chart --pool-id "pool-id"
 ```
 
-### Volumes
+### DEX Data
 
-Get DEX overview:
 ```bash
+# Get DEX overview
 python chain_data.py --function get-dex-overview
-```
 
-Get chain-specific DEX data:
-```bash
+# Get chain-specific DEX data
 python chain_data.py --function get-chain-dex-overview --chain ethereum
-```
 
-Get options DEX data:
-```bash
+# Get options DEX data
 python chain_data.py --function get-options-overview
 ```
 
 ### Fees and Revenue
 
-Get protocol fees overview:
 ```bash
+# Get protocol fees overview
 python chain_data.py --function get-fees-overview
-```
 
-Get chain-specific fees:
-```bash
+# Get chain-specific fees
 python chain_data.py --function get-chain-fees-overview --chain ethereum
 ```
 
