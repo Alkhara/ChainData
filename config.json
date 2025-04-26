@@ -1,0 +1,14 @@
+{
+    "cache": {
+        "enabled": true,
+        "expiry_seconds": 3600,
+        "directory": "cache",
+        "defillama_subdir": "defillama",
+        "blockchain_subdir": "blockchain"
+    },
+    "display": {
+        "max_protocols": 20,
+        "max_history_entries": 10,
+        "date_format": "%Y-%m-%d %H:%M"
+    }
+}

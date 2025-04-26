@@ -1,36 +1,65 @@
 # ChainData
 
-A powerful command-line tool for retrieving blockchain and DeFi data, including chain information, RPC endpoints, and Total Value Locked (TVL) metrics.
+A comprehensive CLI tool for blockchain and DeFi data analysis.
 
 ## Features
 
-- Chain Information
-  - Get chain data by ID or name
-  - List all available chains
-  - Search for chains
-  - Get RPC endpoints (HTTP and WSS)
-  - Get explorer links
-  - Get native currency information
-  - Get EIP support information
+### Blockchain Data
+- Chain information and metadata
+- RPC endpoints (HTTP and WebSocket)
+- Block explorers
+- EIP support
+- Native currency details
+- TVL (Total Value Locked) data
 
-- DeFi Data (via DefiLlama API)
-  - Get protocol TVL data
-  - Get chain TVL data
-  - Search for protocols
-  - Get top protocols by TVL
-  - Get protocols on specific chains
+### DeFi Data (via DefiLlama API)
+- Protocol TVL and historical data
+- Chain-specific TVL
+- Protocol search and information
+- Top protocols by TVL
+- Chain-specific protocols
+
+#### Coins and Prices
+- Current token prices
+- Historical price data
+- Batch historical prices
+- Price charts
+- Price percentage changes
+- First price records
+
+#### Stablecoins
+- List all stablecoins
+- Historical market cap data
+- Chain-specific stablecoin data
+- Individual stablecoin information
+- Current stablecoin prices
+
+#### Yields
+- Pool data and APY
+- Historical APY/TVL charts
+
+#### Volumes
+- DEX overview and metrics
+- Chain-specific DEX data
+- Individual DEX statistics
+- Options DEX data
+
+#### Fees and Revenue
+- Protocol fees overview
+- Chain-specific fees
+- Individual protocol fee data
 
 ## Installation
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/ChainData.git
-cd ChainData
+git clone https://github.com/yourusername/chaindata.git
+cd chaindata
 ```
 
 2. Install dependencies:
 ```bash
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ## Usage
@@ -39,42 +68,22 @@ pip install -r requirements.txt
 
 List all available chains:
 ```bash
-python chain_data.py -l
+python chain_data.py --list
 ```
 
-Search for chains:
+Search for a chain:
 ```bash
-python chain_data.py -s "eth"
+python chain_data.py --search "ethereum"
 ```
 
 Get chain data by ID:
 ```bash
-python chain_data.py -c 1 -f chain-data
+python chain_data.py --chain-id 1
 ```
 
-Get chain data by name:
-```bash
-python chain_data.py -n "Ethereum" -f chain-data
-```
+### DeFi Data
 
-Get HTTP RPCs:
-```bash
-python chain_data.py -c 1 -f http-rpcs
-```
-
-Get WSS RPCs:
-```bash
-python chain_data.py -c 1 -f wss-rpcs
-```
-
-Get explorer links:
-```bash
-python chain_data.py -c 1 -f explorer-link -a "0x123..."
-```
-
-### DeFi Data (DefiLlama)
-
-Get protocol TVL:
+Get protocol information:
 ```bash
 python chain_data.py --protocol aave
 ```
@@ -84,72 +93,139 @@ Get top protocols by TVL:
 python chain_data.py --top-protocols 10
 ```
 
-Get all protocols on a specific chain:
+Get protocols on a specific chain:
 ```bash
-python chain_data.py --chain-protocols ethereum
+python chain_data.py --chain-protocols ethereum --limit 5
 ```
 
 Search for protocols:
 ```bash
-python chain_data.py -f search-protocols -s "uni"
+python chain_data.py --function search-protocols --search "aave"
 ```
 
-Get chain TVL:
+### Coins and Prices
+
+Get current prices:
 ```bash
-python chain_data.py -f chain-tvl --chain-protocols ethereum
+python chain_data.py --function get-current-prices --coins "ethereum:0x...","bsc:0x..."
+```
+
+Get historical prices:
+```bash
+python chain_data.py --function get-historical-prices --coins "ethereum:0x..." --timestamp 1648680149
+```
+
+Get price charts:
+```bash
+python chain_data.py --function get-price-chart --coins "ethereum:0x..." --period "7d"
+```
+
+### Stablecoins
+
+List all stablecoins:
+```bash
+python chain_data.py --function get-stablecoins
+```
+
+Get stablecoin market cap data:
+```bash
+python chain_data.py --function get-stablecoin-charts
+```
+
+Get chain-specific stablecoin data:
+```bash
+python chain_data.py --function get-chain-stablecoin-charts --chain ethereum
+```
+
+### Yields
+
+Get pool data:
+```bash
+python chain_data.py --function get-pools
+```
+
+Get pool APY/TVL chart:
+```bash
+python chain_data.py --function get-pool-chart --pool-id "pool-id"
+```
+
+### Volumes
+
+Get DEX overview:
+```bash
+python chain_data.py --function get-dex-overview
+```
+
+Get chain-specific DEX data:
+```bash
+python chain_data.py --function get-chain-dex-overview --chain ethereum
+```
+
+Get options DEX data:
+```bash
+python chain_data.py --function get-options-overview
+```
+
+### Fees and Revenue
+
+Get protocol fees overview:
+```bash
+python chain_data.py --function get-fees-overview
+```
+
+Get chain-specific fees:
+```bash
+python chain_data.py --function get-chain-fees-overview --chain ethereum
 ```
 
 ## Command Line Arguments
 
-### Chain Information Arguments
-- `-c, --chain-id`: Chain ID
-- `-n, --name`: Chain name
-- `-s, --search`: Search for chains
-- `-l, --list`: List all available chains
-- `-f, --function`: Function to execute
-  - `http-rpcs`: Get HTTP RPCs
-  - `wss-rpcs`: Get WSS RPCs
-  - `explorer`: Get explorer links
-  - `eips`: Get EIP support
-  - `native-currency`: Get native currency info
-  - `tvl`: Get TVL data
-  - `chain-data`: Get chain data
-  - `explorer-link`: Get explorer link for address
+### Chain Commands
+- `--list`: List all available chains
+- `--search`: Search for chains by name or ID
+- `--chain-id`: Get chain data by ID
+- `--name`: Get chain data by name
+- `--function`: Specify the function to execute
+- `--format`: Output format (table or json)
 
-### DefiLlama Arguments
-- `--protocol`: Protocol name for TVL data
+### Protocol Commands
+- `--protocol`: Get protocol information
 - `--top-protocols`: Get top N protocols by TVL
-- `--chain-protocols`: Get all protocols on a specific chain
-- `-f, --function` (additional options):
-  - `protocol-tvl`: Get protocol TVL data
-  - `chain-tvl`: Get chain TVL data
-  - `search-protocols`: Search for protocols
+- `--chain-protocols`: Get protocols on a specific chain
+- `--limit`: Limit the number of protocols shown
+- `--search`: Search term for protocols
 
-### Additional Options
-- `-o, --format`: Output format (table or json)
-- `-t, --no-tracking`: Exclude tracking RPCs
-- `-e, --explorer-type`: Specific explorer type
-- `-a, --address`: Address for explorer link
-- `-r, --force-refresh`: Force refresh cache
+### Cache Commands
+- `--refresh`: Force refresh the cache
 
 ## Data Sources
 
-- Chain Information: Chainlist.org
-- DeFi Data: DefiLlama API (https://api.llama.fi)
+- Chain data: Chainlist.org
+- DeFi data: DefiLlama API
+  - TVL data
+  - Protocol information
+  - Chain-specific data
+  - Coins and prices
+  - Stablecoins
+  - Yields
+  - Volumes
+  - Fees and revenue
 
 ## Caching
 
-The tool implements caching for:
-- Chain data (1 hour expiry)
-- DefiLlama API responses (using LRU cache)
+The application implements caching to improve performance and reduce API calls:
+- Chain data is cached for 24 hours
+- DefiLlama data is cached for 1 hour
+- Cache can be force refreshed with `--refresh` flag
 
 ## Error Handling
 
-The tool includes comprehensive error handling for:
-- API request failures
-- Invalid inputs
-- Network issues
-- Cache errors
+The application includes comprehensive error handling:
+- Invalid chain IDs or names
+- API rate limits
+- Network errors
+- Invalid protocol names
+- Missing required arguments
 
 ## Contributing
 

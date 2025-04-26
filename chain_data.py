@@ -15,6 +15,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from typing import Dict, List, Optional, Union, Any
 from defillama import DefiLlamaAPI
+from config import config
 
 # Initialize colorama
 init()
@@ -41,8 +42,7 @@ print("""
 
 print(f"{Style.RESET_ALL}")
 
-CACHE_FILE = 'blockchain_data_cache.json'
-CACHE_EXPIRY_SECONDS = 3600  # 1 hour
+CACHE_FILE = os.path.join(config.get('cache.directory'), config.get('cache.blockchain_subdir'), 'blockchain_data_cache.json')
 
 def print_error(message):
     print(f"{Fore.RED}Error: {message}{Style.RESET_ALL}")
@@ -93,7 +93,7 @@ def get_all_blockchain_data(force_refresh=False):
             if last_updated:
                 last_updated_str = datetime.fromtimestamp(last_updated).strftime('%Y-%m-%d %H:%M:%S')
                 print_info(f"Data last updated: {last_updated_str}")
-            if time.time() - last_updated < CACHE_EXPIRY_SECONDS:
+            if time.time() - last_updated < config.get('cache.expiry_seconds'):
                 print_success("Using cached data")
                 data = cache.get('data', [])
                 initialize_data_structures(data)
@@ -113,6 +113,7 @@ def get_all_blockchain_data(force_refresh=False):
         print_success(f"Fetched {len(data)} chains from API")
         
         # Save to cache
+        os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
         with open(CACHE_FILE, 'w') as f:
             json.dump({'last_updated': time.time(), 'data': data}, f)
         
@@ -279,7 +280,7 @@ def search_protocols(query: str) -> List[Dict]:
     """Search for DeFi protocols"""
     return defillama.search_protocols(query)
 
-def get_top_protocols(limit: int = 10) -> List[Dict]:
+def get_top_protocols(limit: Optional[int] = None) -> List[Dict]:
     """Get top protocols by TVL"""
     return defillama.get_top_protocols(limit)
 
@@ -307,9 +308,9 @@ def print_protocol_info(protocol_data: Dict[str, Any]):
         if history:
             # Sort by date in descending order
             sorted_history = sorted(history, key=lambda x: x['date'], reverse=True)
-            # Take the first 5 entries (most recent)
-            for entry in sorted_history[:5]:
-                date = datetime.fromtimestamp(entry['date']).strftime('%Y-%m-%d')
+            # Take the first N entries (most recent)
+            for entry in sorted_history[:config.get('display.max_history_entries')]:
+                date = datetime.fromtimestamp(entry['date']).strftime(config.get('display.date_format'))
                 print(f"{date}: ${entry['totalLiquidityUSD']:,.2f}")
         else:
             print_warning("No TVL history data available")
@@ -358,6 +359,20 @@ def main():
             blockchain_data = get_all_blockchain_data(force_refresh=True)
         
         # Handle DefiLlama specific commands first
+        if args.function == 'search-protocols':
+            if not args.search:
+                print_error("Error: --search is required for protocol search")
+                return
+            results = search_protocols(args.search)
+            if results:
+                print(f"\n{Fore.CYAN}Search Results:{Style.RESET_ALL}")
+                for protocol in results:
+                    tvl = protocol.get('tvl', 0) or 0  # Handle None values
+                    print(f"{protocol['name']}: ${tvl:,.2f}")
+            else:
+                print_warning(f"No protocols found matching '{args.search}'")
+            return
+        
         if args.protocol:
             protocol_data = get_protocol_tvl(args.protocol)
             print_protocol_info(protocol_data)
@@ -442,12 +457,6 @@ def main():
             print(f"\n{Fore.CYAN}TVL for {args.chain_protocols}:{Style.RESET_ALL}")
             for chain, tvl in result.items():
                 print(f"{chain}: ${tvl:,.2f}")
-            return
-        elif args.function == 'search-protocols':
-            result = search_protocols(args.search)
-            print(f"\n{Fore.CYAN}Search Results:{Style.RESET_ALL}")
-            for protocol in result:
-                print(f"{protocol['name']}: ${protocol.get('tvl', 0):,.2f}")
             return
         
         # Print result
