@@ -1,0 +1,9 @@
+# Cache file
+blockchain_data_cache.json
+
+# env
+.env
+
+# logs
+logs/*
+
