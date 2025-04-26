@@ -5,8 +5,16 @@ import os
 import time
 from datetime import datetime
 import argparse
+from tqdm import tqdm
+from colorama import init, Fore, Style
+import re
+
+# Initialize colorama
+init()
 
 # print a cool welcome message in ascii art saying ChainData
+print(f"{Fore.CYAN}")
+
 print("""
 
  ░▒▓██████▓▒░░▒▓█▓▒░░▒▓█▓▒░░▒▓██████▓▒░░▒▓█▓▒░▒▓███████▓▒░░▒▓███████▓▒░ ░▒▓██████▓▒░▒▓████████▓▒░▒▓██████▓▒░  
@@ -21,9 +29,22 @@ print("""
 
 """)
 
+print(f"{Style.RESET_ALL}")
 
 CACHE_FILE = 'blockchain_data_cache.json'
 CACHE_EXPIRY_SECONDS = 3600  # 1 hour
+
+def print_error(message):
+    print(f"{Fore.RED}Error: {message}{Style.RESET_ALL}")
+
+def print_success(message):
+    print(f"{Fore.GREEN}{message}{Style.RESET_ALL}")
+
+def print_info(message):
+    print(f"{Fore.CYAN}{message}{Style.RESET_ALL}")
+
+def print_warning(message):
+    print(f"{Fore.YELLOW}Warning: {message}{Style.RESET_ALL}")
 
 def get_all_blockchain_data(force_refresh=False):
     # Check if cache exists and is fresh
@@ -34,28 +55,55 @@ def get_all_blockchain_data(force_refresh=False):
             last_updated = cache.get('last_updated', 0)
             if last_updated:
                 last_updated_str = datetime.fromtimestamp(last_updated).strftime('%Y-%m-%d %H:%M:%S')
-                print(f"Data last updated: {last_updated_str}")
+                print_info(f"Data last updated: {last_updated_str}")
             if time.time() - last_updated < CACHE_EXPIRY_SECONDS:
-                print("Using cached data")
+                print_success("Using cached data")
                 return cache.get('data', [])
         except Exception as e:
-            print(f"Error reading cache: {e}")
+            print_error(f"Error reading cache: {e}")
             pass  # If cache is corrupted, fetch fresh
     
     # Fetch fresh data
-    print("Fetching fresh data")
+    print_info("Fetching fresh data...")
     url = "https://chainlist.org/rpcs.json"
-    response = requests.get(url)
-    data = response.json()
-    print(f"Fetched {len(data)} chains from API")
-    
-    # Save to cache
-    with open(CACHE_FILE, 'w') as f:
-        json.dump({'last_updated': time.time(), 'data': data}, f)
-    return data
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        print_success(f"Fetched {len(data)} chains from API")
+        
+        # Save to cache
+        with open(CACHE_FILE, 'w') as f:
+            json.dump({'last_updated': time.time(), 'data': data}, f)
+        return data
+    except requests.exceptions.RequestException as e:
+        print_error(f"Failed to fetch data: {e}")
+        return []
 
 # Initialize blockchain data
 blockchain_data = get_all_blockchain_data()
+
+def search_chains(query):
+    """Search for chains by name or ID"""
+    results = []
+    query = query.lower()
+    for chain in blockchain_data:
+        if (query in chain['name'].lower() or 
+            str(chain['chainId']) == query or
+            query in chain.get('shortName', '').lower()):
+            results.append(chain)
+    return results
+
+def list_chains(format='table'):
+    """List all available chains"""
+    if format == 'table':
+        print(f"\n{Fore.CYAN}Available Chains:{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}{'ID':<8} {'Name':<30} {'Short Name':<15}{Style.RESET_ALL}")
+        print("-" * 55)
+        for chain in sorted(blockchain_data, key=lambda x: x['chainId']):
+            print(f"{chain['chainId']:<8} {chain['name']:<30} {chain.get('shortName', 'N/A'):<15}")
+    elif format == 'json':
+        print(json.dumps(blockchain_data, indent=2))
 
 ## Get Specific Blockchain Data
 
@@ -242,33 +290,55 @@ def main():
     
     # Add mutually exclusive group for chain identifier
     identifier_group = parser.add_mutually_exclusive_group(required=False)
-    identifier_group.add_argument('--chain-id', type=int, help='Chain ID')
-    identifier_group.add_argument('--name', type=str, help='Chain name')
+    identifier_group.add_argument('-c', '--chain-id', type=int, help='Chain ID')
+    identifier_group.add_argument('-n', '--name', type=str, help='Chain name')
+    identifier_group.add_argument('-s', '--search', type=str, help='Search for chains')
+    identifier_group.add_argument('-l', '--list', action='store_true', help='List all available chains')
     
     # Add function argument
-    parser.add_argument('--function', type=str, required=False, choices=[
+    parser.add_argument('-f', '--function', type=str, required=False, choices=[
         'http-rpcs', 'wss-rpcs', 'explorer', 'eips', 
         'native-currency', 'tvl', 'chain-data', 'explorer-link'
-    ], help='Function to call')
+    ], help='Function to execute')
     
-    # Add optional arguments
-    parser.add_argument('--no-tracking', action='store_true', help='Only return RPCs with no tracking')
-    parser.add_argument('--explorer-type', type=str, help='Specific explorer type to return')
-    parser.add_argument('--address', type=str, help='Address to get explorer link for')
-    parser.add_argument('--list-functions', action='store_true', help='List all available functions')
+    # Add format argument
+    parser.add_argument('-o', '--format', type=str, choices=['table', 'json'], default='table',
+                       help='Output format (table or json)')
+    
+    # Add other arguments
+    parser.add_argument('-t', '--no-tracking', action='store_true', help='Exclude tracking RPCs')
+    parser.add_argument('-e', '--explorer-type', type=str, help='Specific explorer type')
+    parser.add_argument('-a', '--address', type=str, help='Address for explorer link')
+    parser.add_argument('-r', '--force-refresh', action='store_true', help='Force refresh cache')
     
     args = parser.parse_args()
     
-    if args.list_functions:
-        list_available_functions()
+    if args.force_refresh:
+        global blockchain_data
+        blockchain_data = get_all_blockchain_data(force_refresh=True)
+    
+    if args.list:
+        list_chains(format=args.format)
+        return
+    
+    if args.search:
+        results = search_chains(args.search)
+        if results:
+            print(f"\n{Fore.CYAN}Search Results:{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}{'ID':<8} {'Name':<30} {'Short Name':<15}{Style.RESET_ALL}")
+            print("-" * 55)
+            for chain in results:
+                print(f"{chain['chainId']:<8} {chain['name']:<30} {chain.get('shortName', 'N/A'):<15}")
+        else:
+            print_warning(f"No chains found matching '{args.search}'")
         return
     
     if not args.function:
-        print("Error: --function is required. Use --list-functions to see available options.")
+        print_error("Error: --function is required. Use --list-functions to see available options.")
         return
     
     if not (args.chain_id or args.name):
-        print("Error: Either --chain-id or --name must be provided.")
+        print_error("Error: Either --chain-id or --name must be provided.")
         return
     
     # Determine identifier
@@ -294,12 +364,15 @@ def main():
     
     # Print result
     if isinstance(identifier, int):
-        print("Network: ", chain_id_to_name(identifier))
+        print_info(f"Network: {chain_id_to_name(identifier)}")
     else:
-        print("Network: ", identifier)
+        print_info(f"Network: {identifier}")
 
-    print(f"Function: {args.function}")
-    print(json.dumps(result, indent=2))
+    print_info(f"Function: {args.function}")
+    if isinstance(result, (list, dict)):
+        print(json.dumps(result, indent=2))
+    else:
+        print(result)
 
 if __name__ == '__main__':
     main()

@@ -41,26 +41,68 @@ pip install -r requirements.txt
 
 ### Command Line Interface
 
-The tool can be used via command line with various options:
+The tool can be used via command line with various options. All options have both long and short forms:
+
+| Short | Long | Description |
+|-------|------|-------------|
+| `-c` | `--chain-id` | Chain ID |
+| `-n` | `--name` | Chain name |
+| `-f` | `--function` | Function to execute |
+| `-s` | `--search` | Search for chains |
+| `-l` | `--list` | List all available chains |
+| `-o` | `--format` | Output format (table/json) |
+| `-t` | `--no-tracking` | Exclude tracking RPCs |
+| `-e` | `--explorer-type` | Specific explorer type |
+| `-a` | `--address` | Address for explorer link |
+| `-r` | `--force-refresh` | Force refresh cache |
+
+#### Examples
 
 ```bash
 # Get HTTP RPCs for Ethereum Mainnet
+python chain_data.py -c 1 -f http-rpcs
+# or
 python chain_data.py --chain-id 1 --function http-rpcs
 
 # Get explorer URLs for a specific chain
+python chain_data.py -n "ethereum mainnet" -f explorer
+# or
 python chain_data.py --name "ethereum mainnet" --function explorer
 
 # Get WebSocket RPCs with no tracking
+python chain_data.py -c 1 -f wss-rpcs -t
+# or
 python chain_data.py --chain-id 1 --function wss-rpcs --no-tracking
 
+# Search for chains containing "eth"
+python chain_data.py -s eth
+# or
+python chain_data.py --search eth
+
+# List all chains in JSON format
+python chain_data.py -l -o json
+# or
+python chain_data.py --list --format json
+
 # Get native currency information
+python chain_data.py -c 1 -f native-currency
+# or
 python chain_data.py --chain-id 1 --function native-currency
 
 # Get supported EIPs
+python chain_data.py -c 1 -f eips
+# or
 python chain_data.py --chain-id 1 --function eips
 
 # Get TVL information
+python chain_data.py -c 1 -f tvl
+# or
 python chain_data.py --chain-id 1 --function tvl
+
+# Force refresh cache
+python chain_data.py -r -c 1 -f http-rpcs
+# or
+python chain_data.py --force-refresh --chain-id 1 --function http-rpcs
 ```
 
 ### Python API
@@ -89,7 +131,7 @@ eips = get_eips(1)
 The tool implements a caching mechanism to reduce API calls:
 - Cache is stored in `blockchain_data_cache.json`
 - Cache expires after 1 hour by default
-- Force refresh available with `force_refresh=True` parameter
+- Force refresh available with `-r` or `--force-refresh` option
 
 ## Contributing
 
