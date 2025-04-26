@@ -7,15 +7,10 @@ from ..utils.display import (
     format_protocol_info, format_chain_list, format_protocol_list
 )
 from ..core.config import config
-from .interactive import InteractiveMode
 
 def parse_args():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(description='Chain Data CLI')
-    
-    # Add interactive mode flag
-    parser.add_argument('-i', '--interactive', action='store_true',
-                       help='Start in interactive mode')
     
     # Protocol commands
     protocol_group = parser.add_argument_group('Protocol Commands')
@@ -89,12 +84,6 @@ def main():
     """Main entry point"""
     args = parse_args()
     
-    # Start interactive mode if requested
-    if args.interactive:
-        interactive = InteractiveMode()
-        interactive.run()
-        return
-    
     # Initialize data if needed
     if args.refresh:
         blockchain_api.get_all_blockchain_data(force_refresh=True)
@@ -107,7 +96,7 @@ def main():
     elif args.chain:
         handle_chain_command(args)
     else:
-        print_error("No command specified. Use --help for usage information or --interactive for interactive mode.")
+        print_error("No command specified. Use --help for usage information.")
 
 if __name__ == '__main__':
     main() 
