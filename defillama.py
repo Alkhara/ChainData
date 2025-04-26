@@ -74,9 +74,10 @@ class DefiLlamaAPI:
     def get_top_protocols(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get top protocols by TVL"""
         all_protocols = self.get_all_protocols()
+        # Sort by TVL, treating None as 0
         return sorted(
             all_protocols,
-            key=lambda x: x.get("tvl", 0),
+            key=lambda x: x.get("tvl", 0) or 0,  # Convert None to 0
             reverse=True
         )[:limit]
     

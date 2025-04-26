@@ -283,20 +283,38 @@ def get_top_protocols(limit: int = 10) -> List[Dict]:
     """Get top protocols by TVL"""
     return defillama.get_top_protocols(limit)
 
-def get_chain_protocols(chain: str) -> List[Dict]:
-    """Get all protocols on a specific chain"""
-    return defillama.get_chain_protocols(chain)
+def get_chain_protocols(chain: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Get all protocols on a specific chain, optionally limited to top N by TVL"""
+    protocols = defillama.get_chain_protocols(chain)
+    if limit:
+        # Sort by TVL and take top N
+        protocols = sorted(
+            protocols,
+            key=lambda x: x.get("tvl", 0) or 0,
+            reverse=True
+        )[:limit]
+    return protocols
 
-def print_protocol_info(protocol_data: Dict):
+def print_protocol_info(protocol_data: Dict[str, Any]):
     """Print formatted protocol information"""
     print(f"\n{Fore.CYAN}Protocol: {protocol_data['name']}{Style.RESET_ALL}")
     print(f"Current TVL: ${protocol_data['current_tvl']:,.2f}")
     
-    if 'tvl_history' in protocol_data:
-        print(f"\n{Fore.CYAN}TVL History:{Style.RESET_ALL}")
-        for entry in protocol_data['tvl_history'][-5:]:  # Show last 5 entries
-            date = datetime.fromtimestamp(entry['date']).strftime('%Y-%m-%d')
-            print(f"{date}: ${entry['totalLiquidityUSD']:,.2f}")
+    if 'tvl_history' in protocol_data and isinstance(protocol_data['tvl_history'], dict):
+        print(f"\n{Fore.CYAN}TVL History (Most Recent First):{Style.RESET_ALL}")
+        # Get the TVL history and sort by date in descending order
+        history = protocol_data['tvl_history'].get('tvl', [])
+        if history:
+            # Sort by date in descending order
+            sorted_history = sorted(history, key=lambda x: x['date'], reverse=True)
+            # Take the first 5 entries (most recent)
+            for entry in sorted_history[:5]:
+                date = datetime.fromtimestamp(entry['date']).strftime('%Y-%m-%d')
+                print(f"{date}: ${entry['totalLiquidityUSD']:,.2f}")
+        else:
+            print_warning("No TVL history data available")
+    else:
+        print_warning("No TVL history data available")
 
 def main():
     try:
@@ -313,6 +331,7 @@ def main():
         parser.add_argument('--protocol', type=str, help='Protocol name for TVL data')
         parser.add_argument('--top-protocols', type=int, help='Get top N protocols by TVL')
         parser.add_argument('--chain-protocols', type=str, help='Get all protocols on a specific chain')
+        parser.add_argument('--limit', type=int, help='Limit the number of protocols shown (for chain-protocols)')
         
         # Add function argument
         parser.add_argument('-f', '--function', type=str, required=False, choices=[
@@ -338,6 +357,27 @@ def main():
             global blockchain_data
             blockchain_data = get_all_blockchain_data(force_refresh=True)
         
+        # Handle DefiLlama specific commands first
+        if args.protocol:
+            protocol_data = get_protocol_tvl(args.protocol)
+            print_protocol_info(protocol_data)
+            return
+        
+        if args.top_protocols:
+            top_protocols = get_top_protocols(args.top_protocols)
+            print(f"\n{Fore.CYAN}Top {args.top_protocols} Protocols by TVL:{Style.RESET_ALL}")
+            for i, protocol in enumerate(top_protocols, 1):
+                print(f"{i}. {protocol['name']}: ${protocol.get('tvl', 0):,.2f}")
+            return
+        
+        if args.chain_protocols:
+            chain_protocols = get_chain_protocols(args.chain_protocols, args.limit)
+            limit_text = f" (Top {args.limit})" if args.limit else ""
+            print(f"\n{Fore.CYAN}Protocols on {args.chain_protocols}{limit_text}:{Style.RESET_ALL}")
+            for i, protocol in enumerate(chain_protocols, 1):
+                print(f"{i}. {protocol['name']}: ${protocol.get('tvl', 0):,.2f}")
+            return
+        
         if args.list:
             list_chains(format=args.format)
             return
@@ -354,12 +394,13 @@ def main():
                 print_warning(f"No chains found matching '{args.search}'")
             return
         
+        # Handle chain-specific functions
         if not args.function:
-            print_error("Error: --function is required. Use --list-functions to see available options.")
+            print_error("Error: --function is required for chain-specific operations. Use --list-functions to see available options.")
             return
         
         if not (args.chain_id or args.name):
-            print_error("Error: Either --chain-id or --name must be provided.")
+            print_error("Error: Either --chain-id or --name must be provided for chain-specific operations.")
             return
         
         # Determine identifier
