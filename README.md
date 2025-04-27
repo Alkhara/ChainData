@@ -75,6 +75,11 @@ Note: The tool caches data to reduce API calls. Use appropriate flags to force r
 - Multiple token support
 - Coingecko integration
 
+### Etherscan Data
+- Transactions by address
+- Token transfers by address
+- Contract source code
+
 ## Installation
 
 1. Clone the repository:
@@ -86,6 +91,11 @@ cd chaindata
 2. Install dependencies:
 ```bash
 pip install -r requirements.txt
+```
+
+3. Create a `.env` file in the project root with your API keys:
+```bash
+ETHERSCAN_API_KEY=your_api_key_here
 ```
 
 ## Command Reference
@@ -177,6 +187,18 @@ python chain_data.py defillama pools --min-tvl 1000000 --min-apy 5
 
 # Limit results
 python chain_data.py defillama pools --limit 20
+```
+
+### Etherscan Commands
+```bash
+# Get Transactions for an address
+python chain_data.py etherscan transactions {ADDRESS}
+
+# Get Token Transfers for an Address
+python chain_data.py transfers --contract {TOKEN CONTRACT} {ADDRESS}
+
+# Get Contract Code
+python chain_data.py contract {CONTRACT ADDRESS}
 ```
 
 ## Output Formats
