@@ -1103,6 +1103,9 @@ def main():
         parser.print_help()
         return
 
+    # Get the etherscan subparser for help display
+    etherscan_parser = parser._subparsers._group_actions[0].choices.get('etherscan')
+
     try:
         if args.command == "chainlist":
             # Initialize chainlist data if not already done
