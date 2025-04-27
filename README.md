@@ -79,7 +79,7 @@ Note: The tool caches data to reduce API calls. Use appropriate flags to force r
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/chaindata.git
+git clone https://github.com/Alkhara/chaindata.git
 cd chaindata
 ```
 
