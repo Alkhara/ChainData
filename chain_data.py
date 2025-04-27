@@ -35,6 +35,8 @@ from src.utils.display import (
     print_success,
     print_warning,
 )
+from src.api.etherscan import etherscan_api
+from src.models.etherscan import Transaction, TokenTransfer, ContractSource
 
 # Initialize colorama
 init()
@@ -899,10 +901,54 @@ def get_token_identifier(token: str) -> str:
     return f"coingecko:{token.lower()}"
 
 
+def format_transaction_data(transactions: List[Transaction], format: str = "table") -> str:
+    """Format transaction data for display."""
+    if format == "table":
+        print(f"\n{Fore.CYAN}Transactions:{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}{'Hash':<66} {'From':<42} {'To':<42} {'Value (ETH)':<15} {'Time':<20}{Style.RESET_ALL}")
+        print("-" * 185)
+        for tx in transactions:
+            value_eth = float(tx.value) / 1e18
+            time_str = datetime.fromtimestamp(int(tx.timeStamp)).strftime(config.get("display.date_format"))
+            print(f"{tx.hash:<66} {tx.from_address:<42} {tx.to_address:<42} {value_eth:,.6f} {time_str:<20}")
+        return ""
+    elif format == "json":
+        return json.dumps([tx.dict() for tx in transactions], indent=2)
+
+
+def format_token_transfer_data(transfers: List[TokenTransfer], format: str = "table") -> str:
+    """Format token transfer data for display."""
+    if format == "table":
+        print(f"\n{Fore.CYAN}Token Transfers:{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}{'Hash':<66} {'Token':<20} {'From':<42} {'To':<42} {'Value':<20} {'Time':<20}{Style.RESET_ALL}")
+        print("-" * 210)
+        for transfer in transfers:
+            value = float(transfer.value) / (10 ** int(transfer.tokenDecimal))
+            time_str = datetime.fromtimestamp(int(transfer.timeStamp)).strftime(config.get("display.date_format"))
+            print(f"{transfer.hash:<66} {transfer.tokenSymbol:<20} {transfer.from_address:<42} {transfer.to_address:<42} {value:,.6f} {time_str:<20}")
+        return ""
+    elif format == "json":
+        return json.dumps([transfer.dict() for transfer in transfers], indent=2)
+
+
+def format_contract_source(contract: ContractSource, format: str = "table") -> str:
+    """Format contract source code for display."""
+    if format == "table":
+        print(f"\n{Fore.CYAN}Contract Information:{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}{'Name':<20} {'Compiler':<20} {'Optimization':<15} {'License':<15}{Style.RESET_ALL}")
+        print("-" * 70)
+        print(f"{contract.ContractName:<20} {contract.CompilerVersion:<20} {contract.OptimizationUsed:<15} {contract.LicenseType:<15}")
+        print(f"\n{Fore.CYAN}Source Code:{Style.RESET_ALL}")
+        print(contract.SourceCode)
+        return ""
+    elif format == "json":
+        return json.dumps(contract.dict(), indent=2)
+
+
 def setup_parser():
-    """Set up the argument parser for the CLI"""
-    parser = argparse.ArgumentParser(description="Chain Data CLI")
-    subparsers = parser.add_subparsers(dest="command", help="Top-level command")
+    """Set up the argument parser."""
+    parser = argparse.ArgumentParser(description="ChainData - Blockchain Data Aggregator")
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # Chainlist commands
     chainlist_parser = subparsers.add_parser(
@@ -1019,16 +1065,43 @@ def setup_parser():
         help="Show supported chains for each protocol",
     )
 
+    # Etherscan commands
+    etherscan_parser = subparsers.add_parser("etherscan", help="Etherscan-related commands")
+    etherscan_subparsers = etherscan_parser.add_subparsers(dest="subcommand", help="Etherscan subcommands")
+
+    # Transactions command
+    transactions_parser = etherscan_subparsers.add_parser("transactions", help="Get transactions for an address")
+    transactions_parser.add_argument("address", help="Ethereum address")
+    transactions_parser.add_argument("--start-block", type=int, help="Start block number")
+    transactions_parser.add_argument("--end-block", type=int, help="End block number")
+    transactions_parser.add_argument("--page", type=int, default=1, help="Page number")
+    transactions_parser.add_argument("--offset", type=int, default=10, help="Number of results per page")
+    transactions_parser.add_argument("--format", choices=["table", "json"], default="table", help="Output format")
+
+    # Token transfers command
+    transfers_parser = etherscan_subparsers.add_parser("transfers", help="Get token transfers for an address")
+    transfers_parser.add_argument("address", help="Ethereum address")
+    transfers_parser.add_argument("--contract", help="Token contract address")
+    transfers_parser.add_argument("--page", type=int, default=1, help="Page number")
+    transfers_parser.add_argument("--offset", type=int, default=10, help="Number of results per page")
+    transfers_parser.add_argument("--format", choices=["table", "json"], default="table", help="Output format")
+
+    # Contract source command
+    contract_parser = etherscan_subparsers.add_parser("contract", help="Get contract source code")
+    contract_parser.add_argument("address", help="Contract address")
+    contract_parser.add_argument("--format", choices=["table", "json"], default="table", help="Output format")
+
     return parser
 
 
 def main():
+    """Main entry point."""
     parser = setup_parser()
     args = parser.parse_args()
 
     if not args.command:
         parser.print_help()
-        return 1
+        return
 
     try:
         if args.command == "chainlist":
@@ -1140,10 +1213,37 @@ def main():
                     )
                 )
 
+        elif args.command == "etherscan":
+            if args.subcommand == "transactions":
+                transactions = etherscan_api.get_transactions(
+                    args.address,
+                    args.start_block,
+                    args.end_block,
+                    args.page,
+                    args.offset
+                )
+                print(format_transaction_data(transactions, args.format))
+            elif args.subcommand == "transfers":
+                transfers = etherscan_api.get_token_transfers(
+                    args.address,
+                    args.contract,
+                    args.page,
+                    args.offset
+                )
+                print(format_token_transfer_data(transfers, args.format))
+            elif args.subcommand == "contract":
+                contract = etherscan_api.get_contract_source(args.address)
+                if contract:
+                    print(format_contract_source(contract, args.format))
+                else:
+                    print_error("Contract not found")
+            else:
+                etherscan_parser.print_help()
+
         return 0
 
     except Exception as e:
-        print_error(str(e))
+        print_error(f"Error: {str(e)}")
         return 1
 
 
