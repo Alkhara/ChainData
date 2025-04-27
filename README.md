@@ -6,7 +6,7 @@ A comprehensive CLI tool for blockchain and DeFi data analysis.
 
 1. Clone the repository and navigate to the directory:
 ```bash
-git clone https://github.com/yourusername/ChainData.git
+git clone https://github.com/Alkhara/ChainData.git
 cd ChainData
 ```
 
