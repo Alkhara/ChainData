@@ -4,28 +4,43 @@ A comprehensive CLI tool for blockchain and DeFi data analysis.
 
 ## Quick Start
 
+1. Clone the repository and navigate to the directory:
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+git clone https://github.com/yourusername/ChainData.git
+cd ChainData
+```
 
-# Get help
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+3. Try these example commands:
+```bash
+# Get help and see all available commands
 python chain_data.py --help
 
 # List all available chains
 python chain_data.py chainlist list
 
-# Search for a chain
+# Search for a chain (works with names or chain IDs)
 python chain_data.py chainlist search ethereum
+python chain_data.py chainlist search 1  # Ethereum mainnet
 
-# Get chain information
+# Get detailed chain information
 python chain_data.py chainlist info ethereum
 
-# Get protocol information
+# Search for DeFi protocols
 python chain_data.py defillama protocols --search aave
 
-# Get top protocols by TVL
+# Get top protocols by TVL (Total Value Locked)
 python chain_data.py defillama protocols --limit 10
+
+# Get output in JSON format (available for most commands)
+python chain_data.py chainlist list --format json
 ```
+
+Note: The tool caches data to reduce API calls. Use appropriate flags to force refresh when needed.
 
 ## Features
 
