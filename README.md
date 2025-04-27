@@ -5,71 +5,60 @@ A comprehensive CLI tool for blockchain and DeFi data analysis.
 ## Quick Start
 
 ```bash
-# Install
-pip install -e .
+# Install dependencies
+pip install -r requirements.txt
+
+# Get help
+python chain_data.py --help
 
 # List all available chains
-python chain_data.py --list
+python chain_data.py chainlist list
 
 # Search for a chain
-python chain_data.py --search "ethereum"
+python chain_data.py chainlist search ethereum
 
-# Get chain data by ID
-python chain_data.py --chain-id 1
+# Get chain information
+python chain_data.py chainlist info ethereum
 
 # Get protocol information
-python chain_data.py --protocol aave
+python chain_data.py defillama protocols --search aave
 
 # Get top protocols by TVL
-python chain_data.py --top-protocols 10
+python chain_data.py defillama protocols --limit 10
 ```
 
 ## Features
 
-### Blockchain Data
-- Chain information and metadata
-- RPC endpoints (HTTP and WebSocket)
-- Block explorers
-- EIP support
-- Native currency details
-- TVL (Total Value Locked) data
+### Chain Information (via Chainlist)
+- List all chains
+- Search chains by name or ID
+- Get detailed chain information
+- Get RPC endpoints (HTTP and WebSocket)
+- Filter RPCs by type (http/wss)
+- Exclude tracking RPCs
 
-### DeFi Data (via DefiLlama API)
+### DeFi Data (via DefiLlama)
 - Protocol TVL and historical data
 - Chain-specific TVL
-- Protocol search and information
+- Protocol search and filtering
 - Top protocols by TVL
-- Chain-specific protocols
+- Oracle filtering
+- Chain display options
 
-#### Coins and Prices
+### DEX and Trading Data
+- DEX volume overview
+- Chain-specific DEX data
+- 24h/7d/30d volume metrics
+- Volume change percentages
+- Options protocol data
+- Fees and revenue data
+
+### Price and Token Data
 - Current token prices
 - Historical price data
-- Batch historical prices
 - Price charts
-- Price percentage changes
-- First price records
-
-#### Stablecoins
-- List all stablecoins
-- Historical market cap data
-- Chain-specific stablecoin data
-- Individual stablecoin information
-- Current stablecoin prices
-
-#### Yields
-- Pool data and APY
-- Historical APY/TVL charts
-
-#### Volumes
-- DEX overview and metrics
-- Chain-specific DEX data
-- Individual DEX statistics
-- Options DEX data
-
-#### Fees and Revenue
-- Protocol fees overview
-- Chain-specific fees
-- Individual protocol fee data
+- Multiple token support
+- Coingecko integration
 
 ## Installation
 
@@ -81,165 +70,176 @@ cd chaindata
 
 2. Install dependencies:
 ```bash
-pip install -e .
+pip install -r requirements.txt
 ```
 
-## Usage Examples
+## Command Reference
 
-### Chain Information
+### Chainlist Commands
 
 ```bash
-# List all chains in a table format
-python chain_data.py --list --format table
+# List all chains
+python chain_data.py chainlist list
+python chain_data.py chainlist list --format json
 
-# Search for chains with "eth" in their name
-python chain_data.py --search "eth"
+# Search for chains
+python chain_data.py chainlist search ethereum
+python chain_data.py chainlist search "binance smart chain"
 
-# Get detailed chain information
-python chain_data.py --chain-id 1 --format json
+# Get chain information
+python chain_data.py chainlist info ethereum
+python chain_data.py chainlist info 1  # Using chain ID
 
-# Get RPC endpoints for a chain
-python chain_data.py --chain-id 1 --function http-rpcs
-python chain_data.py --chain-id 1 --function wss-rpcs
-
-# Get block explorers
-python chain_data.py --chain-id 1 --function explorer
-
-# Get EIP support
-python chain_data.py --chain-id 1 --function eips
+# Get RPC endpoints
+python chain_data.py chainlist rpcs ethereum --type http
+python chain_data.py chainlist rpcs ethereum --type wss
+python chain_data.py chainlist rpcs ethereum --type http --no-tracking
 ```
 
-### DeFi Data
+### DeFi Protocol Commands
 
 ```bash
-# Get protocol information
-python chain_data.py --protocol aave
+# Get all protocols
+python chain_data.py defillama protocols
 
-# Get top 10 protocols by TVL
-python chain_data.py --top-protocols 10
-
-# Get protocols on Ethereum
-python chain_data.py --chain-protocols ethereum --limit 5
+# Get top protocols with limit
+python chain_data.py defillama protocols --limit 10
 
 # Search for protocols
-python chain_data.py --function search-protocols --search "lending"
+python chain_data.py defillama protocols --search "aave"
 
-# Get historical TVL data
-python chain_data.py --protocol aave --function tvl-history
+# Filter by chain
+python chain_data.py defillama protocols --chain ethereum
+
+# Filter by oracle and show chains
+python chain_data.py defillama protocols --oracle chainlink --show-chains
+
+# Combine filters
+python chain_data.py defillama protocols --chain ethereum --limit 5 --oracle chainlink
 ```
 
-### Token Data
-
-```bash
-# Get current prices
-python chain_data.py --function get-current-prices --coins "ethereum:0x...","bsc:0x..."
-
-# Get historical prices
-python chain_data.py --function get-historical-prices --coins "ethereum:0x..." --timestamp 1648680149
-
-# Get price charts
-python chain_data.py --function get-price-chart --coins "ethereum:0x..." --period "7d"
-```
-
-### Stablecoins
-
-```bash
-# List all stablecoins
-python chain_data.py --function get-stablecoins
-
-# Get stablecoin market cap data
-python chain_data.py --function get-stablecoin-charts
-
-# Get chain-specific stablecoin data
-python chain_data.py --function get-chain-stablecoin-charts --chain ethereum
-```
-
-### Yields and APY
-
-```bash
-# Get pool data
-python chain_data.py --function get-pools
-
-# Get pool APY/TVL chart
-python chain_data.py --function get-pool-chart --pool-id "pool-id"
-```
-
-### DEX Data
+### DEX Commands
 
 ```bash
 # Get DEX overview
-python chain_data.py --function get-dex-overview
+python chain_data.py defillama dex
 
-# Get chain-specific DEX data
-python chain_data.py --function get-chain-dex-overview --chain ethereum
+# Filter by chain
+python chain_data.py defillama dex --chain ethereum
 
-# Get options DEX data
-python chain_data.py --function get-options-overview
+# Limit results and set minimum volume
+python chain_data.py defillama dex --limit 10 --min-volume 1000000
+
+# Get options protocol data
+python chain_data.py defillama options
+python chain_data.py defillama options --chain ethereum
 ```
 
-### Fees and Revenue
+### Price Commands
 
 ```bash
-# Get protocol fees overview
-python chain_data.py --function get-fees-overview
+# Get current prices
+python chain_data.py defillama prices BTC ETH LINK
 
-# Get chain-specific fees
-python chain_data.py --function get-chain-fees-overview --chain ethereum
+# Get historical prices
+python chain_data.py defillama prices BTC ETH --historical --timestamp 1625097600
+
+# Common token symbols are automatically mapped:
+# BTC -> coingecko:bitcoin
+# ETH -> coingecko:ethereum
+# LINK -> coingecko:chainlink
+# etc.
 ```
 
-## Command Line Arguments
+### Yield Pool Commands
 
-### Chain Commands
-- `--list`: List all available chains
-- `--search`: Search for chains by name or ID
-- `--chain-id`: Get chain data by ID
-- `--name`: Get chain data by name
-- `--function`: Specify the function to execute
-- `--format`: Output format (table or json)
+```bash
+# Get all yield pools
+python chain_data.py defillama pools
 
-### Protocol Commands
-- `--protocol`: Get protocol information
-- `--top-protocols`: Get top N protocols by TVL
-- `--chain-protocols`: Get protocols on a specific chain
-- `--limit`: Limit the number of protocols shown
-- `--search`: Search term for protocols
+# Filter pools by TVL and APY
+python chain_data.py defillama pools --min-tvl 1000000 --min-apy 5
 
-### Cache Commands
-- `--refresh`: Force refresh the cache
+# Limit results
+python chain_data.py defillama pools --limit 20
+```
 
-## Data Sources
+## Output Formats
 
-- Chain data: Chainlist.org
-- DeFi data: DefiLlama API
-  - TVL data
-  - Protocol information
-  - Chain-specific data
-  - Coins and prices
-  - Stablecoins
-  - Yields
-  - Volumes
-  - Fees and revenue
+Most commands support multiple output formats:
+- `--format table`: Human-readable table format (default)
+- `--format json`: JSON format for programmatic use
 
-## Caching
+## Data Caching
 
-The application implements caching to improve performance and reduce API calls:
-- Chain data is cached for 24 hours
-- DefiLlama data is cached for 1 hour
-- Cache can be force refreshed with `--refresh` flag
+The tool implements intelligent caching to reduce API calls:
+- Chain data is cached locally
+- Cache expiry is configurable
+- Force refresh with appropriate flags
 
 ## Error Handling
 
-The application includes comprehensive error handling:
-- Invalid chain IDs or names
-- API rate limits
-- Network errors
-- Invalid protocol names
-- Missing required arguments
+The tool provides clear error messages for:
+- Invalid commands or arguments
+- API request failures
+- Rate limiting
+- Network issues
+- Invalid data formats
 
-## Contributing
+## Configuration
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Configuration options can be found in `src/core/config.py`:
+- Cache settings
+- API endpoints
+- Display options
+- Rate limiting
+- Timeout values 
 
-## License
+## Development
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+### Code Style and Linting
+
+This project uses several tools to maintain code quality:
+
+1. **Flake8** for code linting:
+```bash
+# Run flake8 on the codebase
+flake8 .
+```
+
+Flake8 is configured with the following settings:
+- Max line length: 88 characters (matches Black)
+- Ignores E203 (whitespace before ':')
+- Excludes common directories (.git, __pycache__, etc.)
+- Special rules for __init__.py and test files
+
+2. **Black** for code formatting:
+```bash
+# Format code with Black
+black .
+```
+
+3. **isort** for import sorting:
+```bash
+# Sort imports
+isort .
+```
+
+To ensure your code meets the project's standards, run these tools before committing:
+```bash
+# Run all code quality checks
+black .
+isort .
+flake8 .
+```
+
+### Testing
+
+Run the test suite with pytest:
+```bash
+# Run all tests
+pytest
+
+# Run tests with coverage report
+pytest --cov=src tests/
+``` 

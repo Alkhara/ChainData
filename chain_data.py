@@ -1,32 +1,52 @@
-import sys
-import json
-import requests
-import os
-import time
-from datetime import datetime
 import argparse
-from tqdm import tqdm
-from colorama import init, Fore, Style
+import json
+import os
 import re
-from functools import lru_cache
+import sys
+import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from functools import lru_cache
+from typing import Any, Dict, List, Optional, Union
+
+import requests
+from colorama import Fore, Style, init
 from requests.adapters import HTTPAdapter
+from tqdm import tqdm
 from urllib3.util.retry import Retry
-from typing import Dict, List, Optional, Union, Any
+
+from src.api.chainlist import chainlist_api  # Import the global instance
 from src.api.defillama import DefiLlamaAPI
-from config import config
+from src.core.config import config
+from src.utils.display import (
+    format_chain_data,
+    format_chain_info,
+    format_dex_data,
+    format_options_data,
+    format_pool_chart,
+    format_pool_data,
+    format_price_chart,
+    format_price_data,
+    format_price_history,
+    format_rpc_data,
+    print_error,
+    print_info,
+    print_success,
+    print_warning,
+)
 
 # Initialize colorama
 init()
 
-# Initialize DefiLlama API
-defillama = DefiLlamaAPI()
+# Initialize APIs
+defillama_api = DefiLlamaAPI()
 
 # print a cool welcome message in ascii art saying ChainData
 print(f"{Fore.CYAN}")
 
-print("""
+print(
+    """
 
  ░▒▓██████▓▒░░▒▓█▓▒░░▒▓█▓▒░░▒▓██████▓▒░░▒▓█▓▒░▒▓███████▓▒░░▒▓███████▓▒░ ░▒▓██████▓▒░▒▓████████▓▒░▒▓██████▓▒░  
 ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░  ░▒▓█▓▒░░▒▓█▓▒░ 
@@ -38,37 +58,30 @@ print("""
                                                                                                               
                                                                                                               
 
-""")
+"""
+)
 
 print(f"{Style.RESET_ALL}")
 
-CACHE_FILE = os.path.join(config.get('cache.directory'), config.get('cache.blockchain_subdir'), 'blockchain_data_cache.json')
+CACHE_FILE = os.path.join(
+    config.get("cache.directory"),
+    config.get("cache.blockchain_subdir"),
+    "blockchain_data_cache.json",
+)
 
-def print_error(message):
-    print(f"{Fore.RED}Error: {message}{Style.RESET_ALL}")
-
-def print_success(message):
-    print(f"{Fore.GREEN}{message}{Style.RESET_ALL}")
-
-def print_info(message):
-    print(f"{Fore.CYAN}{message}{Style.RESET_ALL}")
-
-def print_warning(message):
-    print(f"{Fore.YELLOW}Warning: {message}{Style.RESET_ALL}")
-
-# Initialize data structures
-blockchain_data = []
-chain_by_id = {}
-chain_by_name = {}
-chain_by_short_name = {}
 
 def initialize_data_structures(data):
     """Initialize optimized data structures for lookups"""
     global blockchain_data, chain_by_id, chain_by_name, chain_by_short_name
     blockchain_data = data
-    chain_by_id = {chain['chainId']: chain for chain in data}
-    chain_by_name = {chain['name'].lower(): chain for chain in data}
-    chain_by_short_name = {chain.get('shortName', '').lower(): chain for chain in data if chain.get('shortName')}
+    chain_by_id = {chain["chainId"]: chain for chain in data}
+    chain_by_name = {chain["name"].lower(): chain for chain in data}
+    chain_by_short_name = {
+        chain.get("shortName", "").lower(): chain
+        for chain in data
+        if chain.get("shortName")
+    }
+
 
 def create_session():
     """Create a requests session with retry logic and connection pooling"""
@@ -78,30 +91,35 @@ def create_session():
         backoff_factor=1,
         status_forcelist=[429, 500, 502, 503, 504],
     )
-    adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=10, pool_maxsize=10)
+    adapter = HTTPAdapter(
+        max_retries=retry_strategy, pool_connections=10, pool_maxsize=10
+    )
     session.mount("http://", adapter)
     session.mount("https://", adapter)
     return session
+
 
 def get_all_blockchain_data(force_refresh=False):
     # Check if cache exists and is fresh
     if not force_refresh and os.path.exists(CACHE_FILE):
         try:
-            with open(CACHE_FILE, 'r') as f:
+            with open(CACHE_FILE, "r") as f:
                 cache = json.load(f)
-            last_updated = cache.get('last_updated', 0)
+            last_updated = cache.get("last_updated", 0)
             if last_updated:
-                last_updated_str = datetime.fromtimestamp(last_updated).strftime('%Y-%m-%d %H:%M:%S')
+                last_updated_str = datetime.fromtimestamp(last_updated).strftime(
+                    config.get("display.date_format")
+                )
                 print_info(f"Data last updated: {last_updated_str}")
-            if time.time() - last_updated < config.get('cache.expiry_seconds'):
+            if time.time() - last_updated < config.get("cache.expiry_seconds"):
                 print_success("Using cached data")
-                data = cache.get('data', [])
+                data = cache.get("data", [])
                 initialize_data_structures(data)
                 return data
         except Exception as e:
             print_error(f"Error reading cache: {e}")
             pass  # If cache is corrupted, fetch fresh
-    
+
     # Fetch fresh data
     print_info("Fetching fresh data...")
     url = "https://chainlist.org/rpcs.json"
@@ -111,36 +129,40 @@ def get_all_blockchain_data(force_refresh=False):
         response.raise_for_status()
         data = response.json()
         print_success(f"Fetched {len(data)} chains from API")
-        
+
         # Save to cache
         os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
-        with open(CACHE_FILE, 'w') as f:
-            json.dump({'last_updated': time.time(), 'data': data}, f)
-        
+        with open(CACHE_FILE, "w") as f:
+            json.dump({"last_updated": time.time(), "data": data}, f)
+
         initialize_data_structures(data)
         return data
     except requests.exceptions.RequestException as e:
         print_error(f"Failed to fetch data: {e}")
         return []
 
+
 # Initialize blockchain data
 blockchain_data = get_all_blockchain_data()
+
 
 @lru_cache(maxsize=128)
 def get_chain_data_by_id(chain_id):
     """Get chain data by ID with caching"""
     return chain_by_id.get(chain_id)
 
+
 @lru_cache(maxsize=128)
 def get_chain_data_by_name(chain_name):
     """Get chain data by name with caching"""
     return chain_by_name.get(chain_name.lower())
 
+
 def search_chains(query):
     """Search for chains by name or ID with optimized lookups"""
     query = query.lower()
     results = []
-    
+
     # Check chain ID
     try:
         chain_id = int(query)
@@ -148,25 +170,31 @@ def search_chains(query):
             results.append(chain_by_id[chain_id])
     except ValueError:
         pass
-    
+
     # Check chain names
     for chain in blockchain_data:
-        if (query in chain['name'].lower() or 
-            query in chain.get('shortName', '').lower()):
+        if (
+            query in chain["name"].lower()
+            or query in chain.get("shortName", "").lower()
+        ):
             results.append(chain)
-    
+
     return results
 
-def list_chains(format='table'):
+
+def list_chains(format="table"):
     """List all available chains"""
-    if format == 'table':
+    if format == "table":
         print(f"\n{Fore.CYAN}Available Chains:{Style.RESET_ALL}")
         print(f"{Fore.CYAN}{'ID':<8} {'Name':<30} {'Short Name':<15}{Style.RESET_ALL}")
         print("-" * 55)
-        for chain in sorted(blockchain_data, key=lambda x: x['chainId']):
-            print(f"{chain['chainId']:<8} {chain['name']:<30} {chain.get('shortName', 'N/A'):<15}")
-    elif format == 'json':
+        for chain in sorted(blockchain_data, key=lambda x: x["chainId"]):
+            print(
+                f"{chain['chainId']:<8} {chain['name']:<30} {chain.get('shortName', 'N/A'):<15}"
+            )
+    elif format == "json":
         print(json.dumps(blockchain_data, indent=2))
+
 
 def get_chain_data(identifier):
     """Get chain data by ID or name"""
@@ -174,86 +202,74 @@ def get_chain_data(identifier):
         return get_chain_data_by_id(identifier)
     return get_chain_data_by_name(identifier)
 
-def get_rpcs_parallel(chain_data, rpc_type, no_tracking=False):
-    """Get RPCs in parallel using thread pool"""
-    rpcs = []
-    if not chain_data:
-        return rpcs
-    
-    def process_rpc(rpc):
-        if rpc_type in rpc['url']:
-            if not no_tracking or (no_tracking and rpc.get('tracking') == 'none'):
-                return rpc['url']
-        return None
-    
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = [executor.submit(process_rpc, rpc) for rpc in chain_data['rpc']]
-        for future in as_completed(futures):
-            result = future.result()
-            if result:
-                rpcs.append(result)
-    
-    return rpcs
 
 def get_rpcs(identifier, rpc_type, no_tracking=False):
     """Unified function to get RPCs by type"""
-    chain_data = get_chain_data(identifier)
-    return get_rpcs_parallel(chain_data, rpc_type, no_tracking)
+    return chainlist_api.get_rpcs(identifier, rpc_type, no_tracking)
+
 
 def get_http_rpcs(identifier, no_tracking=False):
     """Get HTTP RPCs by ID or name with parallel processing"""
-    return get_rpcs(identifier, 'https', no_tracking)
+    return get_rpcs(identifier, "https", no_tracking)
+
 
 def get_wss_rpcs(identifier, no_tracking=False):
     """Get WSS RPCs by ID or name with parallel processing"""
-    return get_rpcs(identifier, 'wss', no_tracking)
+    return get_rpcs(identifier, "wss", no_tracking)
+
 
 def get_explorer(identifier, explorer_type=None):
     """Get explorer by ID or name"""
     chain_data = get_chain_data(identifier)
     explorers = []
     if chain_data:
-        for explorer in chain_data['explorers']:
-            if not explorer_type or explorer['name'] == explorer_type:
-                explorers.append(explorer['url'])
+        for explorer in chain_data["explorers"]:
+            if not explorer_type or explorer["name"] == explorer_type:
+                explorers.append(explorer["url"])
     return explorers
+
 
 def get_eips(identifier):
     """Get EIPs by ID or name"""
     chain_data = get_chain_data(identifier)
     eips = []
     if chain_data:
-        for eip in chain_data['features']:
+        for eip in chain_data["features"]:
             eips.extend(eip.values())
     return eips
+
 
 def get_native_currency(identifier):
     """Get native currency by ID or name"""
     chain_data = get_chain_data(identifier)
     if chain_data:
-        return chain_data['nativeCurrency']
+        return chain_data["nativeCurrency"]
     return None
+
 
 def get_tvl(identifier):
     """Get TVL by ID or name"""
     chain_data = get_chain_data(identifier)
     if chain_data:
-        return chain_data['tvl']
+        return chain_data["tvl"]
     return None
+
 
 def chain_id_to_name(chain_id):
     """Convert chain ID to chain name"""
     chain = get_chain_data_by_id(chain_id)
-    return chain['name'] if chain else None
+    return chain["name"] if chain else None
+
 
 def get_explorer_link(chain_id, address):
     """Get explorer link for an address"""
     chain_data = get_chain_data_by_id(chain_id)
     if chain_data:
-        for explorer in chain_data['explorers']:
-            if explorer['name'] == 'etherscan':
-                return explorer['url'] + '/address/' + address
+        for explorer in chain_data["explorers"]:
+            if explorer["name"] == "etherscan":
+                return explorer["url"] + "/address/" + address
     return None
+
 
 def cleanup_resources():
     """Clean up resources and clear caches"""
@@ -263,505 +279,873 @@ def cleanup_resources():
     chain_by_name.clear()
     chain_by_short_name.clear()
     # Only clear cache if the functions have been decorated
-    if hasattr(get_chain_data_by_id, 'cache_clear'):
+    if hasattr(get_chain_data_by_id, "cache_clear"):
         get_chain_data_by_id.cache_clear()
-    if hasattr(get_chain_data_by_name, 'cache_clear'):
+    if hasattr(get_chain_data_by_name, "cache_clear"):
         get_chain_data_by_name.cache_clear()
+
 
 def get_protocol_tvl(protocol: str) -> Dict:
     """Get TVL data for a protocol"""
-    return defillama.get_protocol_info(protocol)
+    return defillama_api.get_protocol_info(protocol)
+
 
 def get_chain_tvl(chain: str, limit: Optional[int] = None) -> Dict:
     """Get chain TVL"""
     if limit is None:
-        limit = config.get('display.max_tvl_history')
-    result = defillama.get_chain_tvl(chain)
+        limit = config.get("display.max_tvl_history")
+    result = defillama_api.get_chain_tvl(chain)
     if limit and isinstance(result, dict):
         return {k: v[:limit] if isinstance(v, list) else v for k, v in result.items()}
     return result
 
+
 def search_protocols(query: str) -> List[Dict]:
     """Search for DeFi protocols"""
-    results = defillama.search_protocols(query)
-    max_results = config.get('display.max_search_results')
-    return results[:max_results] if max_results else results
+    return defillama_api.search_protocols(query)
+
 
 def get_top_protocols(limit: Optional[int] = None) -> List[Dict]:
     """Get top protocols by TVL"""
     if limit is None:
-        limit = config.get('display.max_protocols')
-    return defillama.get_top_protocols(limit)
+        limit = config.get("display.max_protocols")
+    return defillama_api.get_top_protocols(limit)
 
-def get_chain_protocols(chain: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+
+def get_chain_protocols(
+    chain: str, limit: Optional[int] = None
+) -> List[Dict[str, Any]]:
     """Get all protocols on a specific chain, optionally limited to top N by TVL"""
     if limit is None:
-        limit = config.get('display.max_protocols')
-    protocols = defillama.get_chain_protocols(chain)
+        limit = config.get("display.max_protocols")
+    protocols = defillama_api.get_chain_protocols(chain)
     if limit:
         # Sort by TVL and take top N
-        protocols = sorted(
-            protocols,
-            key=lambda x: x.get("tvl", 0) or 0,
-            reverse=True
-        )[:limit]
+        protocols = sorted(protocols, key=lambda x: x.get("tvl", 0) or 0, reverse=True)[
+            :limit
+        ]
     return protocols
+
 
 def print_protocol_info(protocol_data: Dict[str, Any]):
     """Print formatted protocol information"""
     print(f"\n{Fore.CYAN}Protocol: {protocol_data['name']}{Style.RESET_ALL}")
     print(f"Current TVL: ${protocol_data['current_tvl']:,.2f}")
-    
-    if 'tvl_history' in protocol_data and isinstance(protocol_data['tvl_history'], dict):
+
+    if "tvl_history" in protocol_data and isinstance(
+        protocol_data["tvl_history"], dict
+    ):
         print(f"\n{Fore.CYAN}TVL History (Most Recent First):{Style.RESET_ALL}")
         # Get the TVL history and sort by date in descending order
-        history = protocol_data['tvl_history'].get('tvl', [])
+        history = protocol_data["tvl_history"].get("tvl", [])
         if history:
             # Sort by date in descending order
-            sorted_history = sorted(history, key=lambda x: x['date'], reverse=True)
+            sorted_history = sorted(history, key=lambda x: x["date"], reverse=True)
             # Take the first N entries (most recent)
-            for entry in sorted_history[:config.get('display.max_history_entries')]:
-                date = datetime.fromtimestamp(entry['date']).strftime(config.get('display.date_format'))
+            for entry in sorted_history[: config.get("display.max_history_entries")]:
+                date = datetime.fromtimestamp(entry["date"]).strftime(
+                    config.get("display.date_format")
+                )
                 print(f"{date}: ${entry['totalLiquidityUSD']:,.2f}")
         else:
             print_warning("No TVL history data available")
     else:
         print_warning("No TVL history data available")
 
-def get_pools(limit: Optional[int] = None, min_tvl: Optional[float] = None, min_apy: Optional[float] = None) -> List[Dict]:
+
+def get_pools(
+    limit: Optional[int] = None,
+    min_tvl: Optional[float] = None,
+    min_apy: Optional[float] = None,
+) -> List[Dict]:
     """Get yield pools with optional filtering"""
-    if limit is None:
-        limit = config.get('display.max_pools')
-    pools = defillama.get_pools()
-    if isinstance(pools, list):
-        # Apply filters
-        if min_tvl is not None:
-            pools = [p for p in pools if p.get('tvlUsd', 0) >= min_tvl]
-        if min_apy is not None:
-            pools = [p for p in pools if p.get('apy', 0) >= min_apy]
-        
-        # Sort by APY in descending order
-        pools = sorted(pools, key=lambda x: x.get('apy', 0) or 0, reverse=True)
-        
-        # Format the results as a table
-        if pools:
-            print("\nYield Pools:")
-            print("-" * 100)
-            # Left-align text columns, right-align numeric columns
-            headers = [
-                f"{'Project':<25}",
-                f"{'Chain':<12}",
-                f"{'Symbol':<20}",
-                f"{'APY':>15}",
-                f"{'TVL (USD)':>15}"
-            ]
-            print("".join(headers))
-            print("-" * 100)
-            
-            for pool in pools[:limit]:
-                project = pool.get('project', 'N/A')[:24]  # Truncate long names
-                chain = pool.get('chain', 'N/A')[:11]
-                symbol = pool.get('symbol', 'N/A')[:19]
-                apy = f"{pool.get('apy', 0):,.2f}%"
-                tvl = f"${pool.get('tvlUsd', 0):,.2f}"
-                
-                # Format each column with proper alignment
-                columns = [
-                    f"{project:<25}",
-                    f"{chain:<12}",
-                    f"{symbol:<20}",
-                    f"{apy:>15}",
-                    f"{tvl:>15}"
-                ]
-                print("".join(columns))
-            
-            print("-" * 100)
-            print(f"Showing {min(len(pools), limit)} of {len(pools)} pools")
-            if min_tvl is not None:
-                print(f"Minimum TVL: ${min_tvl:,.2f}")
-            if min_apy is not None:
-                print(f"Minimum APY: {min_apy:.2f}%")
-        
-        return pools[:limit]
+    pools = defillama_api.get_pools()
+
+    # Apply filters
+    if min_tvl is not None:
+        pools = [p for p in pools if p.get("tvlUsd", 0) >= min_tvl]
+    if min_apy is not None:
+        pools = [p for p in pools if p.get("apy", 0) >= min_apy]
+
+    # Sort by APY in descending order
+    pools = sorted(pools, key=lambda x: x.get("apy", 0) or 0, reverse=True)
+
+    # Apply limit
+    if limit is not None:
+        pools = pools[:limit]
+
     return pools
+
 
 def get_stablecoins(limit: Optional[int] = None) -> List[Dict]:
     """Get stablecoins"""
     if limit is None:
-        limit = config.get('display.max_stablecoins')
-    stablecoins = defillama.get_stablecoins()
+        limit = config.get("display.max_stablecoins")
+    stablecoins = defillama_api.get_stablecoins()
     if isinstance(stablecoins, list):
         return stablecoins[:limit]
     elif isinstance(stablecoins, dict):
         return list(stablecoins.values())[:limit]
     return stablecoins
 
+
 def get_dex_overview(limit: Optional[int] = None) -> List[Dict]:
     """Get DEX overview"""
-    if limit is None:
-        limit = config.get('display.max_dexes')
-    dexs = defillama.get_dex_overview()
-    if isinstance(dexs, list):
-        return dexs[:limit]
-    elif isinstance(dexs, dict):
-        return list(dexs.values())[:limit]
-    return dexs
+    return defillama_api.get_dex_overview(limit)
+
 
 def get_options_overview(limit: Optional[int] = None) -> List[Dict]:
     """Get options overview"""
-    if limit is None:
-        limit = config.get('display.max_options')
-    options = defillama.get_options_overview()
-    if isinstance(options, list):
-        return options[:limit]
-    elif isinstance(options, dict):
-        return list(options.values())[:limit]
-    return options
+    return defillama_api.get_options_overview(limit)
+
 
 def get_fees_overview(limit: Optional[int] = None) -> List[Dict]:
     """Get fees overview"""
     if limit is None:
-        limit = config.get('display.max_fees')
-    fees = defillama.get_fees_overview()
+        limit = config.get("display.max_fees")
+    fees = defillama_api.get_fees_overview()
     if isinstance(fees, list):
         return fees[:limit]
     elif isinstance(fees, dict):
         return list(fees.values())[:limit]
     return fees
 
+
 def get_current_prices(coins: List[str], limit: Optional[int] = None) -> Dict:
     """Get current prices"""
     if limit is None:
-        limit = config.get('display.max_prices')
-    result = defillama.get_current_prices(coins)
+        limit = config.get("display.max_prices")
+    result = defillama_api.get_current_prices(coins)
     if limit and isinstance(result, dict):
         return dict(list(result.items())[:limit])
     return result
 
-def get_historical_prices(coins: List[str], timestamp: int, limit: Optional[int] = None) -> Dict:
+
+def get_historical_prices(
+    coins: List[str], timestamp: int, limit: Optional[int] = None
+) -> Dict:
     """Get historical prices"""
     if limit is None:
-        limit = config.get('display.max_price_history')
-    result = defillama.get_historical_prices(coins, timestamp)
+        limit = config.get("display.max_price_history")
+    result = defillama_api.get_historical_prices(coins, timestamp)
     if limit and isinstance(result, dict):
         return dict(list(result.items())[:limit])
     return result
+
 
 def get_price_chart(coins: List[str], period: str, limit: Optional[int] = None) -> Dict:
     """Get price chart"""
     if limit is None:
-        limit = config.get('display.max_price_history')
-    result = defillama.get_price_chart(coins, period)
+        limit = config.get("display.max_price_history")
+    result = defillama_api.get_price_chart(coins, period)
     if limit and isinstance(result, dict):
         return {k: v[:limit] if isinstance(v, list) else v for k, v in result.items()}
     return result
+
 
 def get_volume_history(protocol: str, limit: Optional[int] = None) -> Dict:
     """Get volume history"""
     if limit is None:
-        limit = config.get('display.max_volume_history')
-    result = defillama.get_volume_history(protocol)
+        limit = config.get("display.max_volume_history")
+    result = defillama_api.get_volume_history(protocol)
     if limit and isinstance(result, dict):
         return {k: v[:limit] if isinstance(v, list) else v for k, v in result.items()}
     return result
+
 
 def get_fee_history(protocol: str, limit: Optional[int] = None) -> Dict:
     """Get fee history"""
     if limit is None:
-        limit = config.get('display.max_fee_history')
-    result = defillama.get_fee_history(protocol)
+        limit = config.get("display.max_fee_history")
+    result = defillama_api.get_fee_history(protocol)
     if limit and isinstance(result, dict):
         return {k: v[:limit] if isinstance(v, list) else v for k, v in result.items()}
     return result
 
+
+def format_chain_data(
+    data, output_format="text", oracle_filter=None, show_chains=False, limit=None
+):
+    """Format protocol data for display.
+
+    Args:
+        data: List of protocol data from DefiLlama
+        output_format: Output format ('text' or 'json')
+        oracle_filter: Filter protocols by oracle (e.g., 'chainlink')
+        show_chains: Whether to display supported chains
+        limit: Maximum number of protocols to display
+    """
+    if output_format == "json":
+        return json.dumps(data, indent=2)
+
+    # Filter by oracle if specified
+    if oracle_filter:
+        data = [
+            p
+            for p in data
+            if oracle_filter.lower() in [o.lower() for o in p.get("oracles", [])]
+        ]
+
+    # Sort by TVL
+    data.sort(key=lambda x: float(x.get("tvl", 0)), reverse=True)
+
+    # Apply limit if specified
+    if limit is not None:
+        data = data[:limit]
+
+    # Format header
+    header = f"{'Name':<30} {'TVL':>15} {'1h Change':>12} {'24h Change':>12} {'7d Change':>12}"
+    if show_chains:
+        header += " Chains"
+
+    lines = [header, "-" * len(header)]
+
+    # Format each protocol
+    for protocol in data:
+        name = protocol.get("name", "Unknown")[:30]
+        tvl = format_number(float(protocol.get("tvl", 0)))
+        change_1h = format_percentage(protocol.get("change_1h", 0))
+        change_1d = format_percentage(protocol.get("change_1d", 0))
+        change_7d = format_percentage(protocol.get("change_7d", 0))
+
+        line = f"{name:<30} {tvl:>15} {change_1h:>12} {change_1d:>12} {change_7d:>12}"
+
+        if show_chains:
+            chains = protocol.get("chains", [])
+            if chains:
+                line += f" {', '.join(chains)}"
+
+        lines.append(line)
+
+    return "\n".join(lines)
+
+
+def format_number(value):
+    """Format large numbers with K/M/B suffixes."""
+    if value >= 1_000_000_000:
+        return f"${value/1_000_000_000:.2f}B"
+    elif value >= 1_000_000:
+        return f"${value/1_000_000:.2f}M"
+    elif value >= 1_000:
+        return f"${value/1_000:.2f}K"
+    else:
+        return f"${value:.2f}"
+
+
+def format_percentage(value):
+    """Format percentage with color based on value."""
+    if not value:
+        return "0.00%"
+
+    value = float(value)
+    if value > 0:
+        return f"\033[32m+{value:.2f}%\033[0m"  # Green for positive
+    elif value < 0:
+        return f"\033[31m{value:.2f}%\033[0m"  # Red for negative
+    return "0.00%"
+
+
+def format_price_data(
+    price_data: Union[Dict[str, float], List[Dict[str, Any]]], format: str = "table"
+) -> str:
+    """Format price data for display"""
+    if format == "json":
+        return json.dumps(price_data, indent=2)
+
+    result = []
+    result.append(f"\n{Fore.CYAN}Current Prices:{Style.RESET_ALL}")
+    result.append(f"{Fore.CYAN}{'Token':<15} {'Price (USD)':<20}{Style.RESET_ALL}")
+    result.append("-" * 35)
+
+    def clean_token_name(token: str) -> str:
+        """Clean token name for display by removing prefix and formatting"""
+        if ":" in token:
+            prefix, name = token.split(":", 1)
+            if prefix == "coingecko":
+                # Capitalize first letter of each word, replace hyphens with spaces
+                return name.replace("-", " ").title()
+            return f"{prefix}:{name}"  # Keep original format for non-coingecko tokens
+        return token.title()
+
+    if isinstance(price_data, dict):
+        # Handle nested structure from DefiLlama API
+        for coin, data in price_data.items():
+            # The API returns data in the format: {"coins": {"LINK": {"price": 123.45, ...}}}
+            if coin == "coins" and isinstance(data, dict):
+                for token, token_data in data.items():
+                    if isinstance(token_data, dict):
+                        price = token_data.get("price", 0)
+                        display_name = clean_token_name(token)
+                        result.append(
+                            f"{Fore.WHITE}{display_name:<15}{Style.RESET_ALL} ${price:,.4f}"
+                        )
+            # Direct price data format
+            elif isinstance(data, dict) and "price" in data:
+                price = data["price"]
+                display_name = clean_token_name(coin)
+                result.append(
+                    f"{Fore.WHITE}{display_name:<15}{Style.RESET_ALL} ${price:,.4f}"
+                )
+            elif isinstance(data, (int, float)):
+                display_name = clean_token_name(coin)
+                result.append(
+                    f"{Fore.WHITE}{display_name:<15}{Style.RESET_ALL} ${float(data):,.4f}"
+                )
+    else:
+        # Historical or chart data
+        for entry in price_data:
+            timestamp = datetime.fromtimestamp(entry["timestamp"]).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+            price = entry.get("price", 0)
+            result.append(f"{timestamp}: ${price:,.4f}")
+
+    return "\n".join(result)
+
+
+def format_chart_data(chart_data: List[Dict[str, Any]], format: str = "table") -> str:
+    """Format historical chart data for display"""
+    if format == "json":
+        return json.dumps(chart_data, indent=2)
+
+    result = []
+    result.append("\nHistorical Data:")
+    for entry in chart_data:
+        timestamp = datetime.fromtimestamp(entry["timestamp"]).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        values = []
+        for key, value in entry.items():
+            if key != "timestamp":
+                if isinstance(value, float):
+                    values.append(f"{key}: ${value:,.2f}")
+                else:
+                    values.append(f"{key}: {value}")
+        result.append(f"{timestamp}: {', '.join(values)}")
+
+    return "\n".join(result)
+
+
+def format_pool_data(pool_data: List[Dict[str, Any]], format: str = "table") -> str:
+    """Format pool data for display"""
+    if format == "json":
+        return json.dumps(pool_data, indent=2)
+
+    result = []
+    result.append("\nYield Pools Information:")
+    result.append(
+        f"{Fore.CYAN}Project              Chain           Symbol      APY          TVL (USD){Style.RESET_ALL}"
+    )
+    result.append(f"{Fore.BLUE}{'-' * 75}{Style.RESET_ALL}")
+
+    for pool in pool_data:
+        # Format APY with color based on value
+        apy = pool.get("apy", 0)
+        apy_color = Fore.GREEN if apy >= 10 else Fore.YELLOW if apy >= 5 else Fore.RED
+        apy_str = f"{apy_color}{apy:.2f}%{Style.RESET_ALL}"
+
+        # Format TVL with thousands separator and color
+        tvl = pool.get("tvlUsd", 0)
+        tvl_str = f"${tvl:,.2f}"
+
+        # Format each column with proper spacing
+        project = pool.get("project", "N/A")[:18]
+        chain = pool.get("chain", "N/A")[:12]
+        symbol = pool.get("symbol", "N/A")[:10]
+
+        # Build the row with proper spacing and alignment
+        row = (
+            f"{Fore.WHITE}{project:<18}{Style.RESET_ALL} | "
+            f"{Fore.WHITE}{chain:<12}{Style.RESET_ALL} | "
+            f"{Fore.CYAN}{symbol:<10}{Style.RESET_ALL} | "
+            f"{apy_str:<12} | "
+            f"{Fore.CYAN}{tvl_str}{Style.RESET_ALL}"
+        )
+
+        result.append(row)
+
+    return "\n".join(result)
+
+
+def format_dex_data(
+    dex_data: Union[Dict[str, Any], List[Dict[str, Any]]],
+    format: str = "table",
+    limit: int = 20,
+    min_volume: Optional[float] = None,
+) -> str:
+    """Format DEX data for display"""
+    if format == "json":
+        return json.dumps(dex_data, indent=2)
+
+    result = []
+
+    # Extract and sort DEX data
+    dexes = []
+    total_volume_24h = 0
+    total_volume_7d = 0
+    total_volume_30d = 0
+
+    # Process DEX data - handle both list and dict responses
+    if isinstance(dex_data, list):
+        dex_list = dex_data
+    else:
+        dex_list = dex_data.get("protocols", [])
+
+    # Process each DEX
+    for dex in dex_list:
+        if isinstance(dex, dict):
+            # Get volume data from the correct fields
+            volume_24h = float(dex.get("total24h", 0))
+            volume_7d = float(dex.get("total7d", 0))
+            volume_30d = float(dex.get("total30d", 0))
+            total_volume_24h += volume_24h
+            total_volume_7d += volume_7d
+            total_volume_30d += volume_30d
+
+            if min_volume is None or volume_24h >= min_volume:
+                dexes.append(
+                    {
+                        "name": dex.get("name", "Unknown"),
+                        "volume_24h": volume_24h,
+                        "change_24h": dex.get("change_1d", 0),
+                        "volume_7d": volume_7d,
+                        "change_7d": dex.get("change_7d", 0),
+                        "volume_30d": volume_30d,
+                        "change_30d": dex.get("change_1m", 0),
+                    }
+                )
+
+    # Sort by 24h volume
+    dexes.sort(key=lambda x: x["volume_24h"], reverse=True)
+
+    # Take top N results
+    dexes = dexes[:limit]
+
+    # Format the output
+    result.append(f"\n{Fore.CYAN}DEX Volume Overview:{Style.RESET_ALL}")
+    result.append(f"Total 24h Volume: ${total_volume_24h:,.2f}")
+    result.append(f"Total 7d Volume: ${total_volume_7d:,.2f}")
+    result.append(f"Total 30d Volume: ${total_volume_30d:,.2f}")
+    result.append("")
+
+    # Header with exact spacing from screenshot
+    result.append(
+        f"{Fore.CYAN}{'DEX':<20} {'24h Volume':>20} {'24h Change':>11}   {'7d Volume':>20} {'7d Change':>11}   {'30d Volume':>20} {'30d Change':>11}{Style.RESET_ALL}"
+    )
+    result.append("-" * 120)
+
+    def format_volume(value: float) -> str:
+        """Format volume to fit in 20 chars by using K/M/B for large numbers"""
+        if value >= 1_000_000_000:  # Billions
+            return f"${value/1_000_000_000:.2f}B"
+        elif value >= 1_000_000:  # Millions
+            return f"${value/1_000_000:.2f}M"
+        elif value >= 1_000:  # Thousands
+            return f"${value/1_000:.2f}K"
+        else:
+            return f"${value:.2f}"
+
+    # Data rows
+    for dex in dexes:
+        name = dex["name"][:19]  # Truncate long names
+
+        # Format volumes with exact spacing
+        volume_24h = format_volume(dex["volume_24h"]).rjust(20)
+        volume_7d = format_volume(dex["volume_7d"]).rjust(20)
+        volume_30d = format_volume(dex["volume_30d"]).rjust(20)
+
+        # Color code the change percentages
+        def format_change(change):
+            if isinstance(change, (int, float)):
+                color = Fore.GREEN if change >= 0 else Fore.RED
+                return f"{color}{change:+.2f}%{Style.RESET_ALL}"
+            return "N/A"
+
+        change_24h_str = format_change(dex["change_24h"])
+        change_7d_str = format_change(dex["change_7d"])
+        change_30d_str = format_change(dex["change_30d"])
+
+        # Build the row with exact spacing from screenshot
+        row = (
+            f"{Fore.WHITE}{name:<20}{Style.RESET_ALL} "  # DEX name (left-aligned, 20 chars)
+            f"{volume_24h} "  # 24h volume (right-aligned, 20 chars)
+            f"{change_24h_str:>11}   "  # 24h change (right-aligned, 11 chars + 3 spaces)
+            f"{volume_7d} "  # 7d volume (right-aligned, 20 chars)
+            f"{change_7d_str:>11}   "  # 7d change (right-aligned, 11 chars + 3 spaces)
+            f"{volume_30d} "  # 30d volume (right-aligned, 20 chars)
+            f"{change_30d_str:>11}"  # 30d change (right-aligned, 11 chars)
+        )
+
+        result.append(row)
+
+    return "\n".join(result)
+
+
+def format_options_data(
+    options_data: Union[Dict[str, Any], List[Dict[str, Any]]], format: str = "table"
+) -> str:
+    """Format options data for display"""
+    if format == "json":
+        return json.dumps(options_data, indent=2)
+
+    result = []
+
+    # Extract total volumes
+    total_24h = float(options_data.get("total24h", 0))
+    total_7d = float(options_data.get("total7d", 0))
+    total_30d = float(options_data.get("total30d", 0))
+
+    # Format the output header
+    result.append(f"\n{Fore.CYAN}Options Volume Overview:{Style.RESET_ALL}")
+    result.append(f"Total 24h Volume: ${total_24h:,.2f}")
+    result.append(f"Total 7d Volume: ${total_7d:,.2f}")
+    result.append(f"Total 30d Volume: ${total_30d:,.2f}")
+    result.append("")
+
+    # Header with exact spacing (matching DEX format)
+    result.append(
+        f"{Fore.CYAN}{'Protocol':<20} {'24h Volume':>20} {'24h Change':>11}   {'7d Volume':>20} {'7d Change':>11}   {'30d Volume':>20} {'30d Change':>11}{Style.RESET_ALL}"
+    )
+    result.append("-" * 120)
+
+    def format_volume(value: float) -> str:
+        """Format volume to fit in 20 chars by using K/M/B for large numbers"""
+        if value >= 1_000_000_000:  # Billions
+            return f"${value/1_000_000_000:.2f}B"
+        elif value >= 1_000_000:  # Millions
+            return f"${value/1_000_000:.2f}M"
+        elif value >= 1_000:  # Thousands
+            return f"${value/1_000:.2f}K"
+        else:
+            return f"${value:.2f}"
+
+    # Process protocols and sort by 24h volume
+    protocols = options_data.get("protocols", [])
+    protocols.sort(key=lambda x: float(x.get("total24h", 0)), reverse=True)
+
+    for protocol in protocols:
+        name = protocol.get("name", "Unknown")[:19]  # Truncate long names
+
+        # Get volume data
+        volume_24h = float(protocol.get("total24h", 0))
+        volume_7d = float(protocol.get("total7d", 0))
+        volume_30d = float(protocol.get("total30d", 0))
+
+        # Format volumes with exact spacing
+        volume_24h_str = format_volume(volume_24h).rjust(20)
+        volume_7d_str = format_volume(volume_7d).rjust(20)
+        volume_30d_str = format_volume(volume_30d).rjust(20)
+
+        # Format changes
+        def format_change(change):
+            if isinstance(change, (int, float)):
+                color = Fore.GREEN if change >= 0 else Fore.RED
+                return f"{color}{change:+.2f}%{Style.RESET_ALL}"
+            return "N/A"
+
+        change_24h = format_change(protocol.get("change_1d", 0))
+        change_7d = format_change(protocol.get("change_7d", 0))
+        change_30d = format_change(protocol.get("change_1m", 0))
+
+        # Build the row with exact spacing
+        row = (
+            f"{Fore.WHITE}{name:<20}{Style.RESET_ALL} "  # Protocol name (left-aligned, 20 chars)
+            f"{volume_24h_str} "  # 24h volume (right-aligned, 20 chars)
+            f"{change_24h:>11}   "  # 24h change (right-aligned, 11 chars + 3 spaces)
+            f"{volume_7d_str} "  # 7d volume (right-aligned, 20 chars)
+            f"{change_7d:>11}   "  # 7d change (right-aligned, 11 chars + 3 spaces)
+            f"{volume_30d_str} "  # 30d volume (right-aligned, 20 chars)
+            f"{change_30d:>11}"  # 30d change (right-aligned, 11 chars)
+        )
+
+        result.append(row)
+
+    return "\n".join(result)
+
+
+def get_token_identifier(token: str) -> str:
+    """Convert token symbol or identifier to DefiLlama format"""
+    # If it's already in chain:address format, return as is
+    if ":" in token:
+        return token
+
+    # Common token mappings for better UX
+    token_mappings = {
+        "BTC": "coingecko:bitcoin",
+        "ETH": "coingecko:ethereum",
+        "LINK": "coingecko:chainlink",
+        "USDT": "coingecko:tether",
+        "USDC": "coingecko:usd-coin",
+        "BNB": "coingecko:binancecoin",
+        "SOL": "coingecko:solana",
+        "ADA": "coingecko:cardano",
+        "DOT": "coingecko:polkadot",
+        "MATIC": "coingecko:matic-network",
+        "AVAX": "coingecko:avalanche-2",
+        "UNI": "coingecko:uniswap",
+        "AAVE": "coingecko:aave",
+        "DAI": "coingecko:dai",
+    }
+
+    # Convert to uppercase for matching
+    token_upper = token.upper()
+
+    # If we have a direct mapping, use it
+    if token_upper in token_mappings:
+        return token_mappings[token_upper]
+
+    # Otherwise, try to make a reasonable coingecko ID
+    # Convert token to lowercase as most coingecko IDs are lowercase
+    return f"coingecko:{token.lower()}"
+
+
+def setup_parser():
+    """Set up the argument parser for the CLI"""
+    parser = argparse.ArgumentParser(description="Chain Data CLI")
+    subparsers = parser.add_subparsers(dest="command", help="Top-level command")
+
+    # Chainlist commands
+    chainlist_parser = subparsers.add_parser(
+        "chainlist", help="Interact with Chainlist API"
+    )
+    chainlist_subparsers = chainlist_parser.add_subparsers(
+        dest="subcommand", help="Chainlist subcommand"
+    )
+
+    # Chainlist search command
+    search_parser = chainlist_subparsers.add_parser("search", help="Search for chains")
+    search_parser.add_argument("query", help="Search query (chain name or ID)")
+    search_parser.add_argument(
+        "--format", choices=["table", "json"], default="table", help="Output format"
+    )
+
+    # Chainlist list command
+    list_parser = chainlist_subparsers.add_parser("list", help="List all chains")
+    list_parser.add_argument(
+        "--format", choices=["table", "json"], default="table", help="Output format"
+    )
+
+    # Chainlist info command
+    info_parser = chainlist_subparsers.add_parser("info", help="Get chain information")
+    info_parser.add_argument("chain", help="Chain name or ID")
+    info_parser.add_argument(
+        "--format", choices=["table", "json"], default="table", help="Output format"
+    )
+
+    # Chainlist rpcs command
+    rpcs_parser = chainlist_subparsers.add_parser("rpcs", help="Get RPC endpoints")
+    rpcs_parser.add_argument("chain", help="Chain name or ID")
+    rpcs_parser.add_argument(
+        "--type", choices=["http", "wss"], default="http", help="RPC type"
+    )
+    rpcs_parser.add_argument(
+        "--no-tracking", action="store_true", help="Exclude tracking RPCs"
+    )
+    rpcs_parser.add_argument(
+        "--format", choices=["table", "json"], default="table", help="Output format"
+    )
+
+    # DefiLlama commands
+    defillama_parser = subparsers.add_parser(
+        "defillama", help="Interact with DefiLlama API"
+    )
+    defillama_subparsers = defillama_parser.add_subparsers(
+        dest="subcommand", help="DefiLlama subcommand"
+    )
+
+    # DefiLlama prices command
+    prices_parser = defillama_subparsers.add_parser("prices", help="Get coin prices")
+    prices_parser.add_argument("coins", nargs="+", help="List of coin symbols")
+    prices_parser.add_argument(
+        "--historical", action="store_true", help="Get historical prices"
+    )
+    prices_parser.add_argument(
+        "--timestamp", type=int, help="Timestamp for historical prices"
+    )
+    prices_parser.add_argument(
+        "--format", choices=["table", "json"], default="table", help="Output format"
+    )
+
+    # DefiLlama pools command
+    pools_parser = defillama_subparsers.add_parser("pools", help="Get yield pools")
+    pools_parser.add_argument("--min-tvl", type=float, help="Minimum TVL in USD")
+    pools_parser.add_argument("--min-apy", type=float, help="Minimum APY percentage")
+    pools_parser.add_argument("--limit", type=int, help="Limit number of results")
+    pools_parser.add_argument(
+        "--format", choices=["table", "json"], default="table", help="Output format"
+    )
+
+    # DefiLlama dex command
+    dex_parser = defillama_subparsers.add_parser(
+        "dex", help="Get DEX volume information"
+    )
+    dex_parser.add_argument(
+        "--chain",
+        help="Filter by chain name (e.g., ethereum, bsc, arbitrum). Shows all chains if not specified.",
+    )
+    dex_parser.add_argument(
+        "--limit", type=int, default=20, help="Limit number of results (default: 20)"
+    )
+    dex_parser.add_argument(
+        "--min-volume", type=float, help="Minimum 24h volume in USD"
+    )
+    dex_parser.add_argument(
+        "--format", choices=["table", "json"], default="table", help="Output format"
+    )
+
+    # DefiLlama options command
+    options_parser = defillama_subparsers.add_parser(
+        "options", help="Get options information"
+    )
+    options_parser.add_argument("--chain", help="Filter by chain")
+    options_parser.add_argument(
+        "--format", choices=["table", "json"], default="table", help="Output format"
+    )
+
+    # DefiLlama protocols command
+    protocols_parser = defillama_subparsers.add_parser(
+        "protocols", help="Get protocol information"
+    )
+    protocols_parser.add_argument("--chain", help="Filter by chain")
+    protocols_parser.add_argument("--search", help="Search query")
+    protocols_parser.add_argument("--limit", type=int, help="Limit number of results")
+    protocols_parser.add_argument(
+        "--format", choices=["table", "json"], default="table", help="Output format"
+    )
+    protocols_parser.add_argument("--oracle", help="Filter by oracle (e.g., chainlink)")
+    protocols_parser.add_argument(
+        "--show-chains",
+        action="store_true",
+        help="Show supported chains for each protocol",
+    )
+
+    return parser
+
+
 def main():
+    parser = setup_parser()
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        return 1
+
     try:
-        parser = argparse.ArgumentParser(description='ChainData - Get blockchain information')
-        
-        # Add mutually exclusive group for chain identifier
-        identifier_group = parser.add_mutually_exclusive_group(required=False)
-        identifier_group.add_argument('-c', '--chain-id', type=int, help='Chain ID')
-        identifier_group.add_argument('-n', '--name', type=str, help='Chain name')
-        identifier_group.add_argument('-s', '--search', type=str, help='Search for chains')
-        identifier_group.add_argument('-l', '--list', action='store_true', help='List all available chains')
-        
-        # Add DefiLlama specific arguments
-        parser.add_argument('--protocol', type=str, help='Protocol name for TVL data')
-        parser.add_argument('--top-protocols', type=int, help='Get top N protocols by TVL')
-        parser.add_argument('--chain-protocols', type=str, help='Get all protocols on a specific chain')
-        parser.add_argument('--limit', type=int, help='Limit the number of protocols shown')
-        parser.add_argument('--target-chain', type=str, help='Target chain for chain-specific operations')
-        parser.add_argument('--pool-id', type=str, help='Pool ID for yield/APY data')
-        parser.add_argument('--coins', type=str, help='Comma-separated list of coins for price data')
-        parser.add_argument('--timestamp', type=int, help='Timestamp for historical data')
-        parser.add_argument('--period', type=str, help='Time period for charts (e.g., 24h, 7d)')
-        parser.add_argument('--data-type', type=str, choices=['dailyFees', 'dailyRevenue', 'dailyNotionalVolume', 'dailyPremiumVolume'],
-                          help='Data type for fees/volumes')
-        
-        # Add filter arguments for get-pools
-        parser.add_argument('--min-tvl', type=str, help='Minimum TVL in USD for yield pools')
-        parser.add_argument('--min-apy', type=str, help='Minimum APY percentage for yield pools')
-        
-        # Add function argument
-        parser.add_argument('-f', '--function', type=str, required=False, choices=[
-            # Chain functions
-            'http-rpcs', 'wss-rpcs', 'explorer', 'eips', 
-            'native-currency', 'tvl', 'chain-data', 'explorer-link',
-            
-            # TVL functions
-            'protocol-tvl', 'chain-tvl', 'search-protocols',
-            
-            # Stablecoin functions
-            'get-stablecoins', 'get-stablecoin-charts', 'get-chain-stablecoin-charts',
-            'get-stablecoin-data', 'get-stablecoin-chains', 'get-stablecoin-prices',
-            
-            # Yield/APY functions
-            'get-pools', 'get-pool-chart',
-            
-            # DEX functions
-            'get-dex-overview', 'get-chain-dex-overview', 'get-dex-summary',
-            'get-options-overview', 'get-chain-options-overview', 'get-options-summary',
-            
-            # Fee/Revenue functions
-            'get-fees-overview', 'get-chain-fees-overview', 'get-fees-summary',
-            
-            # Price functions
-            'get-current-prices', 'get-historical-prices', 'get-batch-historical-prices',
-            'get-price-chart', 'get-price-percentage', 'get-first-price'
-        ], help='Function to execute')
-        
-        # Add format argument
-        parser.add_argument('-o', '--format', type=str, choices=['table', 'json'], default='table',
-                           help='Output format (table or json)')
-        
-        # Add other arguments
-        parser.add_argument('-t', '--no-tracking', action='store_true', help='Exclude tracking RPCs')
-        parser.add_argument('-e', '--explorer-type', type=str, help='Specific explorer type')
-        parser.add_argument('-a', '--address', type=str, help='Address for explorer link')
-        parser.add_argument('-r', '--force-refresh', action='store_true', help='Force refresh cache')
-        
-        args = parser.parse_args()
-        
-        if args.force_refresh:
-            cleanup_resources()
-            global blockchain_data
-            blockchain_data = get_all_blockchain_data(force_refresh=True)
-        
-        # Handle DefiLlama specific commands first
-        if args.function == 'search-protocols':
-            if not args.search:
-                print_error("Error: --search is required for protocol search")
-                return
-            results = search_protocols(args.search)
-            if results:
-                print(f"\n{Fore.CYAN}Search Results:{Style.RESET_ALL}")
-                for protocol in results:
-                    tvl = protocol.get('tvl', 0) or 0
-                    print(f"{protocol['name']}: ${tvl:,.2f}")
-            else:
-                print_warning(f"No protocols found matching '{args.search}'")
-            return
-        
-        if args.protocol:
-            protocol_data = get_protocol_tvl(args.protocol)
-            print_protocol_info(protocol_data)
-            return
-        
-        if args.top_protocols:
-            top_protocols = get_top_protocols(args.top_protocols)
-            print(f"\n{Fore.CYAN}Top {args.top_protocols} Protocols by TVL:{Style.RESET_ALL}")
-            for i, protocol in enumerate(top_protocols, 1):
-                print(f"{i}. {protocol['name']}: ${protocol.get('tvl', 0):,.2f}")
-            return
-        
-        if args.chain_protocols:
-            chain_protocols = get_chain_protocols(args.chain_protocols, args.limit)
-            limit_text = f" (Top {args.limit})" if args.limit else ""
-            print(f"\n{Fore.CYAN}Protocols on {args.chain_protocols}{limit_text}:{Style.RESET_ALL}")
-            for i, protocol in enumerate(chain_protocols, 1):
-                print(f"{i}. {protocol['name']}: ${protocol.get('tvl', 0):,.2f}")
-            return
+        if args.command == "chainlist":
+            # Initialize chainlist data if not already done
+            if not chainlist_api.blockchain_data:
+                chainlist_api.get_all_blockchain_data()
 
-        # Handle yield/APY functions
-        if args.function == 'get-pools':
-            # Parse filter arguments
-            min_tvl = None
-            min_apy = None
-            if args.min_tvl:
+            if not args.subcommand:
+                parser.parse_args(["chainlist", "--help"])
+                return 1
+
+            if args.subcommand == "search":
+                results = chainlist_api.search_chains(args.query)
+                print(format_chain_info(results, args.format))
+
+            elif args.subcommand == "list":
+                results = chainlist_api.get_all_blockchain_data()
+                print(format_chain_info(results, args.format))
+
+            elif args.subcommand == "info":
+                # Try to convert to int if possible
                 try:
-                    min_tvl = float(args.min_tvl)
+                    chain_id = int(args.chain)
+                    info = chainlist_api.get_chain_data_by_id(chain_id)
                 except ValueError:
-                    print_error("Error: --min-tvl must be a number")
-                    return
-            if args.min_apy:
+                    info = chainlist_api.get_chain_data_by_name(args.chain)
+
+                if not info:
+                    print_error(f"Chain not found: {args.chain}")
+                    return 1
+                print(format_chain_info(info, args.format))
+
+            elif args.subcommand == "rpcs":
+                # Try to convert to int if possible
                 try:
-                    min_apy = float(args.min_apy)
+                    chain_id = int(args.chain)
+                    chain_data = chainlist_api.get_chain_data_by_id(chain_id)
                 except ValueError:
-                    print_error("Error: --min-apy must be a number")
-                    return
-            
-            result = get_pools(limit=args.limit, min_tvl=min_tvl, min_apy=min_apy)
-            if args.format == 'json':
-                print(json.dumps(result, indent=2))
-            return
+                    chain_data = chainlist_api.get_chain_data_by_name(args.chain)
 
-        if args.function == 'get-pool-chart':
-            if not args.pool_id:
-                print_error("Error: --pool-id is required for pool chart")
-                return
-            result = defillama.get_pool_chart(args.pool_id)
-            print(json.dumps(result, indent=2))
-            return
+                if not chain_data:
+                    print_error(f"Chain not found: {args.chain}")
+                    return 1
 
-        # Handle stablecoin functions
-        if args.function == 'get-stablecoins':
-            result = get_stablecoins()
-            print(json.dumps(result, indent=2))
-            return
+                rpc_type = "https" if args.type == "http" else "wss"
+                rpcs = chainlist_api.get_rpcs(chain_data, rpc_type, args.no_tracking)
 
-        if args.function == 'get-stablecoin-charts':
-            result = defillama.get_stablecoin_charts()
-            print(json.dumps(result, indent=2))
-            return
+                # Format the RPCs for display
+                if args.format == "json":
+                    print(json.dumps({"rpc": rpcs}, indent=2))
+                else:
+                    print("\nRPC Endpoints:")
+                    for rpc in rpcs:
+                        print(f"- {rpc}")
 
-        if args.function == 'get-chain-stablecoin-charts':
-            if not args.target_chain:
-                print_error("Error: --target-chain is required for chain-specific stablecoin charts")
-                return
-            result = defillama.get_chain_stablecoin_charts(args.target_chain)
-            print(json.dumps(result, indent=2))
-            return
+        elif args.command == "defillama":
+            if not args.subcommand:
+                parser.parse_args(["defillama", "--help"])
+                return 1
 
-        # Handle price functions
-        if args.function == 'get-current-prices':
-            if not args.coins:
-                print_error("Error: --coins is required for current prices")
-                return
-            coins = args.coins.split(',')
-            result = get_current_prices(coins)
-            print(json.dumps(result, indent=2))
-            return
+            if args.subcommand == "prices":
+                if args.historical:
+                    if not args.timestamp:
+                        print_error("Timestamp required for historical prices")
+                        return 1
+                    token_ids = [get_token_identifier(token) for token in args.coins]
+                    prices = defillama_api.get_historical_prices(
+                        token_ids, args.timestamp
+                    )
+                else:
+                    # Convert tokens to DefiLlama format
+                    token_ids = [get_token_identifier(token) for token in args.coins]
+                    print_info(f"Fetching prices for: {', '.join(token_ids)}")
+                    prices = defillama_api.get_current_prices(token_ids)
+                print(format_price_data(prices, args.format))
 
-        if args.function == 'get-historical-prices':
-            if not args.coins or not args.timestamp:
-                print_error("Error: --coins and --timestamp are required for historical prices")
-                return
-            coins = args.coins.split(',')
-            result = get_historical_prices(coins, args.timestamp)
-            print(json.dumps(result, indent=2))
-            return
+            elif args.subcommand == "pools":
+                pools = get_pools(args.limit, args.min_tvl, args.min_apy)
+                print(format_pool_data(pools, args.format))
 
-        # Handle DEX functions
-        if args.function == 'get-dex-overview':
-            result = get_dex_overview()
-            print(json.dumps(result, indent=2))
-            return
+            elif args.subcommand == "dex":
+                if args.chain:
+                    dex_data = defillama_api.get_chain_dex_overview(args.chain)
+                else:
+                    dex_data = defillama_api.get_dex_overview()
+                print(
+                    format_dex_data(dex_data, args.format, args.limit, args.min_volume)
+                )
 
-        if args.function == 'get-chain-dex-overview':
-            if not args.target_chain:
-                print_error("Error: --target-chain is required for chain-specific DEX overview")
-                return
-            result = defillama.get_chain_dex_overview(args.target_chain)
-            print(json.dumps(result, indent=2))
-            return
+            elif args.subcommand == "options":
+                if args.chain:
+                    options_data = defillama_api.get_chain_options_overview(args.chain)
+                else:
+                    options_data = defillama_api.get_options_overview()
+                print(format_options_data(options_data, args.format))
 
-        # Handle fee/revenue functions
-        if args.function == 'get-fees-overview':
-            result = get_fees_overview()
-            print(json.dumps(result, indent=2))
-            return
+            elif args.subcommand == "protocols":
+                if args.search:
+                    results = defillama_api.search_protocols(args.search)
+                elif args.chain:
+                    results = defillama_api.get_chain_protocols(args.chain)
+                else:
+                    results = defillama_api.get_top_protocols(args.limit)
 
-        if args.function == 'get-chain-fees-overview':
-            if not args.target_chain:
-                print_error("Error: --target-chain is required for chain-specific fees overview")
-                return
-            result = defillama.get_chain_fees_overview(args.target_chain, data_type=args.data_type)
-            print(json.dumps(result, indent=2))
-            return
+                # Apply oracle filtering and chain display options
+                print(
+                    format_chain_data(
+                        results, args.format, args.oracle, args.show_chains, args.limit
+                    )
+                )
 
-        # Handle chain-specific functions
-        if not args.function:
-            print_error("Error: --function is required for chain-specific operations. Use --list-functions to see available options.")
-            return
-        
-        if not (args.chain_id or args.name):
-            print_error("Error: Either --chain-id or --name must be provided for chain-specific operations.")
-            return
-        
-        # Determine identifier
-        identifier = args.chain_id if args.chain_id is not None else args.name
-        
-        # Validate chain ID if provided
-        if isinstance(identifier, int):
-            chain_data = get_chain_data_by_id(identifier)
-            if not chain_data:
-                print_error(f"Chain ID {identifier} not found.")
-                print_info("Available chains:")
-                list_chains(format='table')
-                print("\nPlease try again with a valid chain ID.")
-                return
-        
-        # Call appropriate function
-        if args.function == 'http-rpcs':
-            result = get_http_rpcs(identifier, args.no_tracking)
-        elif args.function == 'wss-rpcs':
-            result = get_wss_rpcs(identifier, args.no_tracking)
-        elif args.function == 'explorer':
-            result = get_explorer(identifier, args.explorer_type)
-        elif args.function == 'eips':
-            result = get_eips(identifier)
-        elif args.function == 'native-currency':
-            result = get_native_currency(identifier)
-        elif args.function == 'tvl':
-            result = get_tvl(identifier)
-        elif args.function == 'chain-data':
-            result = get_chain_data(identifier)
-        elif args.function == 'explorer-link':
-            result = get_explorer_link(identifier, args.address)
-        
-        # Print result
-        if isinstance(identifier, int):
-            chain_name = chain_id_to_name(identifier)
-            print_info(f"Network: {chain_name if chain_name else 'Unknown'}")
-        else:
-            print_info(f"Network: {identifier}")
+        return 0
 
-        print_info(f"Function: {args.function}")
-        if isinstance(result, (list, dict)):
-            print(json.dumps(result, indent=2))
-        else:
-            print(result)
-    finally:
-        cleanup_resources()
-
-if __name__ == '__main__':
-    main()
+    except Exception as e:
+        print_error(str(e))
+        return 1
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+if __name__ == "__main__":
+    sys.exit(main())
